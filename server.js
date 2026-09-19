@@ -16,22 +16,25 @@ const MIME = {
 const server = http.createServer((req, res) => {
   let file = req.url === "/" ? "pc.html" : req.url.split("?")[0];
   file = file.replace(/^\/+/, "");
-  const full = path.join(PUBLIC_DIR, file);
+  if (file === "") file = "pc.html";
 
-  if (!full.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403);
-    return res.end("Forbidden");
-  }
-
-  fs.readFile(full, (err, data) => {
-    if (err) {
+  // Több helyen keressük: public mappában, majd a gyökérben
+  const candidates = [path.join(PUBLIC_DIR, file), path.join(__dirname, file)];
+  let i = 0;
+  const tryNext = () => {
+    if (i >= candidates.length) {
       res.writeHead(404);
       return res.end("Not found: " + file);
     }
-    const ext = path.extname(full);
-    res.writeHead(200, { "Content-Type": MIME[ext] || "text/plain" });
-    res.end(data);
-  });
+    const full = candidates[i++];
+    fs.readFile(full, (err, data) => {
+      if (err) return tryNext();
+      const ext = path.extname(full);
+      res.writeHead(200, { "Content-Type": MIME[ext] || "text/plain" });
+      res.end(data);
+    });
+  };
+  tryNext();
 });
 
 const wss = new WebSocketServer({ server });
