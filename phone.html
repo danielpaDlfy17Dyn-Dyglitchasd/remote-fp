@@ -290,6 +290,7 @@
     }
 
     async function startStream() {
+      $("loadingScreen").classList.remove("show");
       viewEl.style.display = "block";
       joinScreen.style.display = "none";
       connTxt.textContent = "Kamera indítása...";
