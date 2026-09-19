@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remote First-Person</title>
+  <style>
+    :root {
+      --bg: #000000; --panel: #0a0a0a; --panel-2: #121212;
+      --line: #2a2a2a; --line-bright: #4a4a4a;
+      --text: #ffffff; --muted: #666666; --dim: #999999;
+      --glow: rgba(255,255,255,.25);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+
+    /* ============ CREATE ROOM ============ */
+    .screen {
+      height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 24px;
+      background: radial-gradient(120% 120% at 50% 20%, #0a0a0a 0%, #000 70%);
+    }
+    .brand { text-align: center; margin-bottom: 34px; }
+    .brand .fp { font-size: 34px; font-weight: 800; letter-spacing: 6px; }
+    .brand .sub { font-size: 13px; color: var(--dim); letter-spacing: 4px; text-transform: uppercase; margin-top: 6px; }
+
+    .panel { width: 100%; max-width: 400px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; box-shadow: 0 0 40px rgba(255,255,255,.03); }
+    .panel h2 { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: var(--dim); font-weight: 600; margin-bottom: 22px; }
+    .field { margin-bottom: 18px; }
+    .field label { display: block; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .field input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 13px 14px; border-radius: 8px; font-size: 16px; outline: none; letter-spacing: 2px; font-family: inherit; }
+    .field input:focus { border-color: var(--line-bright); }
+    .field input.upper { text-transform: uppercase; }
+    .field .hint { font-size: 11px; color: var(--muted); margin-top: 6px; letter-spacing: .5px; }
+
+    .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; background: var(--text); color: var(--on-text, #000); transition: all .15s ease; }
+    .btn:hover { background: #e0e0e0; box-shadow: 0 0 20px var(--glow); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    .msg { margin-top: 14px; font-size: 13px; min-height: 18px; color: var(--muted); text-align: center; }
+    .msg.err { color: #ff5c5c; }
+
+    /* ===== ÉBRESZTŐ / TÖLTŐ KÉPERNYŐ ===== */
+    #loadingScreen {
+      height: 100vh; display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px; text-align: center;
+      background: radial-gradient(120% 120% at 50% 20%, #0a0a0a 0%, #000 70%);
+    }
+    #loadingScreen.show { display: flex; }
+    .spinner {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 3px solid var(--line); border-top-color: var(--text);
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .load-title { font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
+    .load-sub { font-size: 13px; color: var(--muted); letter-spacing: 1px; }
+
+    /* ============ GAME (fullscreen kamera) ============ */
+    #game { display: none; width: 100vw; height: 100vh; position: relative; background: #000; }
+    #remote { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+
+    #crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 24px; height: 24px; pointer-events: none; z-index: 6; }
+    #crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.85); box-shadow: 0 0 4px rgba(0,0,0,.8); }
+    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+    #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+    #fsBtn {
+      position: fixed; top: 16px; right: 16px; z-index: 8; width: 42px; height: 42px;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      background: rgba(10,10,10,.5); border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
+      backdrop-filter: blur(4px); transition: all .15s ease;
+    }
+    #fsBtn:hover { background: rgba(10,10,10,.8); border-color: rgba(255,255,255,.5); }
+    #fsBtn svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    #status {
+      position: fixed; top: 16px; left: 16px; z-index: 8;
+      display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,.15); border-radius: 30px;
+      background: rgba(10,10,10,.5); backdrop-filter: blur(4px);
+      font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim);
+    }
+    #status .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    #status .led.on { background: #fff; box-shadow: 0 0 10px var(--glow); }
+
+    #togglebar {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 8;
+      display: flex; gap: 8px; align-items: center; pointer-events: none;
+    }
+    .toggle-chip {
+      padding: 7px 16px; border-radius: 30px; font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      background: rgba(10,10,10,.5); border: 1px solid rgba(255,255,255,.2); color: var(--muted);
+      backdrop-filter: blur(4px); transition: all .12s ease;
+    }
+    .toggle-chip.on { background: #fff; color: #000; border-color: #fff; box-shadow: 0 0 16px var(--glow); }
+
+    #hint { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 7; font-size: 12px; color: rgba(255,255,255,.5); background: rgba(10,10,10,.5); padding: 5px 14px; border-radius: 16px; pointer-events: none; white-space: nowrap; }
+
+    /* Overlay: vezérlés szünetel */
+    #lockOverlay {
+      position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+      background: rgba(0,0,0,.65); backdrop-filter: blur(2px);
+    }
+    #lockOverlay .ov-title { font-size: 22px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
+    #lockOverlay .ov-sub { font-size: 13px; color: var(--dim); letter-spacing: 1px; }
+    #lockOverlay.hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- ========== CREATE ROOM ========== -->
+  <div class="screen" id="createScreen">
+    <div class="brand">
+      <div class="fp">REMOTE FP</div>
+      <div class="sub">Create Room</div>
+    </div>
+    <div class="panel">
+      <h2>Szoba létrehozása</h2>
+      <div class="field">
+        <label>Szobakód</label>
+        <input id="roomCodeInput" class="upper" maxlength="12" placeholder="PL: BARATOK" autocomplete="off" />
+        <div class="hint">Csak angol abc betűi, min. 5 karakter.</div>
+      </div>
+      <div class="field">
+        <label>Jelszó</label>
+        <input id="roomPassInput" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="Pl: 1234" autocomplete="off" />
+        <div class="hint">Csak számok, min. 3 számjegy.</div>
+      </div>
+      <button class="btn" id="createBtn">Create Room</button>
+      <div class="msg" id="createMsg"></div>
+    </div>
+  </div>
+
+  <!-- ========== ÉBRESZTŐ KÉPERNYŐ ========== -->
+  <div id="loadingScreen">
+    <div class="spinner"></div>
+    <div class="load-title" id="loadTitle">Szerver ébresztése...</div>
+    <div class="load-sub">Az első csatlakozás akár 1 percig is eltarthat</div>
+  </div>
+
+  <!-- ========== GAME ========== -->
+  <div id="game">
+    <video id="remote" autoplay playsinline muted></video>
+
+    <div id="status"><span class="led" id="ledConn"></span><span id="connText">Kapcsolódás</span></div>
+    <div id="crosshair"></div>
+
+    <div id="togglebar">
+      <span class="toggle-chip" id="chipF">F</span>
+      <span class="toggle-chip" id="chipCtrl">CTRL</span>
+      <span class="toggle-chip" id="chipShift">Shift</span>
+    </div>
+
+    <button id="fsBtn" title="Fullscreen">
+      <svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>
+    </button>
+
+    <div id="hint">↑↓←→ / WASD: mozgás &nbsp;•&nbsp; Q/E: elfordulás &nbsp;•&nbsp; R: akció &nbsp;•&nbsp; F/CTRL/Shift: toggle</div>
+
+    <div id="lockOverlay">
+      <div class="ov-title">Kattints a vezérléshez</div>
+      <div class="ov-sub">Egér: nézés &nbsp;•&nbsp; ESC: kilépés</div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const createScreen = $("createScreen"), gameEl = $("game");
+    const remoteVideo = $("remote");
+    let inGame = false;
+
+    // ----- Create Room -----
+    const createBtn = $("createBtn");
+    let ws = null;
+
+    $("roomCodeInput").addEventListener("input", (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 12); });
+    $("roomPassInput").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/[^0-9]/g, "").slice(0, 12); });
+
+    createBtn.addEventListener("click", () => {
+      const code = $("roomCodeInput").value;
+      const pass = $("roomPassInput").value;
+      if (code.length < 5) { showErr("A kód min. 5 betű legyen."); return; }
+      if (pass.length < 3) { showErr("A jelszó min. 3 számjegy legyen."); return; }
+      $("createMsg").className = "msg";
+      $("createMsg").textContent = "";
+      connectAndCreate(code, pass);
+    });
+    function showErr(m) { $("createMsg").className = "msg err"; $("createMsg").textContent = m; }
+
+    // Ébresztő-képernyő + újrapróbálkozás, míg a szerver fel nem ébred
+    function connectAndCreate(code, pass) {
+      $("createScreen").style.display = "none";
+      $("loadingScreen").classList.add("show");
+      tryConnect(code, pass);
+    }
+    function tryConnect(code, pass) {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}`);
+      let opened = false;
+      ws.onopen = () => { opened = true; send({ type: "create-room", payload: { code, pass } }); };
+      ws.onmessage = (e) => handleServer(JSON.parse(e.data));
+      ws.onclose = () => { if (!opened) setTimeout(() => tryConnect(code, pass), 4000); };
+      ws.onerror = () => {};
+    }
+    function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+    function handleServer(data) {
+      switch (data.type) {
+        case "room-created": {
+          $("connText").textContent = "Várakozás telefonra";
+          $("ledConn").classList.remove("on");
+          showGame();
+          break;
+        }
+        case "room-error": {
+          $("loadingScreen").classList.remove("show");
+          createScreen.style.display = "flex";
+          showErr(data.payload);
+          break;
+        }
+        case "phone-joined": {
+          $("connText").textContent = "Telefon csatlakozott";
+          $("ledConn").classList.add("on");
+          break;
+        }
+        case "phone-left": {
+          $("connText").textContent = "Telefon kilépett";
+          $("ledConn").classList.remove("on");
+          break;
+        }
+        case "signal": {
+          const s = data.payload;
+          if (s.to !== "pc") return;
+          if (s.sdp && s.sdp.type === "offer") handleOffer(s.sdp);
+          else if (s.ice) {
+            if (pc.remoteDescription) pc.addIceCandidate(s.ice).catch(() => {});
+            else pendingIce.push(s.ice); // még korán érkezett -> sorba
+          }
+          break;
+        }
+      }
+    }
+    function showGame() { createScreen.style.display = "none"; gameEl.style.display = "block"; inGame = true; }
+
+    // ----- WebRTC -----
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    let dataChannel = null;
+    pc.ontrack = (e) => { remoteVideo.srcObject = e.streams[0]; $("connText").textContent = "Kapcsolódva"; $("ledConn").classList.add("on"); };
+    pc.ondatachannel = (e) => {
+      dataChannel = e.channel;
+      dataChannel.onmessage = (m) => { try { const d = JSON.parse(m.data); if (d.type === "pong") { /* ping */ } } catch (err) {} };
+    };
+    pc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "phone", ice: e.candidate } }); };
+    let pendingIce = [];
+    async function handleOffer(offer) {
+      // A telefon hozta létre az adatcsatornát az offerben -> itt csak válaszolunk
+      await pc.setRemoteDescription(offer);
+      for (const c of pendingIce) pc.addIceCandidate(c).catch(() => {});
+      pendingIce = [];
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      send({ type: "signal", payload: { to: "phone", sdp: pc.localDescription } });
+    }
+    function sendCommand(obj) { if (dataChannel && dataChannel.readyState === "open") dataChannel.send(JSON.stringify(obj)); }
+
+    // ----- Input -----
+    // mozgás: ↑↓←→ + WASD ; Q/E elfordulás ; R akció ; F/CTRL/Shift toggle
+    const dirMap = {
+      forward: ["ArrowUp", "KeyW"], back: ["ArrowDown", "KeyS"],
+      left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"]
+    };
+    const TGL = { F: "KeyF", CTRL: "ControlLeft", SHIFT: "ShiftLeft" };
+
+    const held = { forward: false, back: false, left: false, right: false, rotL: false, rotR: false, act: false };
+    const toggles = { F: false, CTRL: false, SHIFT: false };
+
+    function keyToDir(code) { for (const d in dirMap) if (dirMap[d].includes(code)) return d; return null; }
+    function keyToTgl(code) { for (const t in TGL) if (TGL[t] === code) return t; return null; }
+    function refreshToggles() {
+      $("chipF").classList.toggle("on", toggles.F);
+      $("chipCtrl").classList.toggle("on", toggles.CTRL);
+      $("chipShift").classList.toggle("on", toggles.SHIFT);
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (!inGame) return; // csak játékmódban
+      const d = keyToDir(e.code);
+      if (d) { held[d] = true; e.preventDefault(); return; }
+      if (e.code === "KeyQ") { held.rotL = true; e.preventDefault(); }
+      else if (e.code === "KeyE") { held.rotR = true; e.preventDefault(); }
+      else if (e.code === "KeyR") { held.act = true; e.preventDefault(); }
+      else { const t = keyToTgl(e.code); if (t && !e.repeat) { toggles[t] = !toggles[t]; refreshToggles(); e.preventDefault(); } }
+    });
+    window.addEventListener("keyup", (e) => {
+      if (!inGame) return;
+      const d = keyToDir(e.code); if (d) { held[d] = false; return; }
+      if (e.code === "KeyQ") held.rotL = false;
+      else if (e.code === "KeyE") held.rotR = false;
+      else if (e.code === "KeyR") held.act = false;
+    });
+    window.addEventListener("blur", () => { for (const k in held) held[k] = false; });
+
+    // ----- Fullscreen -----
+    $("fsBtn").addEventListener("click", () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+      else document.exitFullscreen();
+    });
+
+    // ----- Pointer lock (kattintas -> kurzor eltunik, ESC -> kilép + overlay) -----
+    let locked = false;
+    let frameDx = 0, frameDy = 0;
+    const lockOverlay = $("lockOverlay");
+    const mouse = { LMB: false, RMB: false };
+
+    function requestLock() {
+      (remoteVideo.requestPointerLock ? remoteVideo : document.body).requestPointerLock().catch(() => {});
+    }
+    lockOverlay.addEventListener("click", requestLock);
+    remoteVideo.addEventListener("click", () => { if (!locked) requestLock(); });
+
+    document.addEventListener("pointerlockchange", () => {
+      locked = document.pointerLockElement === remoteVideo || document.pointerLockElement === document.body;
+      lockOverlay.classList.toggle("hidden", locked);
+      if (!locked) { frameDx = 0; frameDy = 0; mouse.LMB = false; mouse.RMB = false; }
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (locked) { frameDx += e.movementX; frameDy += e.movementY; }
+    });
+    // Zárolt egérrel bal/jobb kattintás -> LMB/RMB a telefonon
+    document.addEventListener("mousedown", (e) => {
+      if (locked && inGame) { if (e.button === 0) mouse.LMB = true; if (e.button === 2) mouse.RMB = true; }
+    });
+    document.addEventListener("mouseup", (e) => {
+      if (e.button === 0) mouse.LMB = false;
+      if (e.button === 2) mouse.RMB = false;
+    });
+    document.addEventListener("contextmenu", (e) => { if (inGame) e.preventDefault(); });
+
+    // ----- Küldés ~30x/mp -----
+    setInterval(() => {
+      if (inGame) {
+        const look = locked ? { dx: frameDx, dy: frameDy } : null;
+        frameDx = 0; frameDy = 0;
+        sendCommand({ type: "state", held: { ...held, ...toggles, ...mouse }, toggles, look });
+      }
+    }, 33);
+  </script>
+</body>
+</html>

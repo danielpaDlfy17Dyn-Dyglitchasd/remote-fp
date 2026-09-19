@@ -1,0 +1,13 @@
+{
+  "name": "remote-first-person-demo",
+  "version": "0.1.0",
+  "description": "LAN demo - telefon kamera iranyitasa a geprol",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
