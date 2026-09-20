@@ -425,6 +425,14 @@
           }
           break;
         }
+        case "kicked": {
+          ws.roomCode = null;
+          document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+          viewEl.style.display = "none";
+          $("greetName").textContent = "Kirúgtak a szobából";
+          showScreen("mainScreen");
+          break;
+        }
         case "peer-left": {
           ws.roomCode = null;
           showScreen("mainScreen");
@@ -463,7 +471,8 @@
     }
 
     async function startStream() {
-      showScreen("view");
+      document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+      viewEl.style.display = "block";
       connTxt.textContent = "Kamera indítása...";
       let stream;
       try {
