@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 8080;
@@ -39,6 +40,56 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server });
 
+function send(ws, obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+// ================= FIÓKOK =================
+// Memóriában tárolva - szerver újraindításnál törlődnek.
+const accounts = new Map(); // name -> pass
+const tokens = new Map();   // token -> name
+const online = new Map();   // name -> ws
+
+// ================= SZOBÁK =================
+const rooms = new Map(); // code -> { code, pass, type, admin, members: Map(name->{ws,device,category}), adminIp }
+
+function normName(v) {
+  return String(v || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+}
+
+function clientIp(req) {
+  const xf = req.headers && req.headers["x-forwarded-for"];
+  if (xf) return String(xf).split(",")[0].trim();
+  return (req.socket && req.socket.remoteAddress) || "";
+}
+
+function roomState(room) {
+  const members = [];
+  for (const [name, m] of room.members) {
+    members.push({ name, device: m.device, category: m.category });
+  }
+  const active = activePlayer(room);
+  return { code: room.code, type: room.type, members, activePlayer: active };
+}
+
+function activePlayer(room) {
+  for (const [name, m] of room.members) {
+    if (m.device === "phone" && m.category === "Játékosok") return name;
+  }
+  return null;
+}
+
+function broadcastRoom(room, type, payload) {
+  for (const [, m] of room.members) send(m.ws, { type, payload });
+}
+
+function addMember(room, ws, device) {
+  let category = "Nézők";
+  if (device === "phone" && !activePlayer(room)) category = "Játékosok";
+  room.members.set(ws.user.name, { ws, device, category });
+  ws.roomCode = room.code;
+}
+
 function lanAddresses() {
   const out = [];
   const ifaces = os.networkInterfaces();
@@ -50,19 +101,9 @@ function lanAddresses() {
   return out;
 }
 
-function send(ws, obj) {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
-}
-
-// --- Szobakezelés ---
-// A gép létrehoz egy szobát (kód + jelszó), a telefon ezekkel lép be.
-const rooms = new Map(); // code (uppercase) -> { pc, phone, pass }
-
-function normCode(v) {
-  return String(v || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
-}
-
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  ws.ip = clientIp(req);
+  ws.user = null;
   ws.roomCode = null;
 
   ws.on("message", (raw) => {
@@ -74,84 +115,204 @@ wss.on("connection", (ws) => {
     }
 
     switch (data.type) {
-      // PC: szoba létrehozása
-      case "create-room": {
-        const code = normCode(data.payload && data.payload.code);
+      // ---------- FIÓK ----------
+      case "register": {
+        const name = normName(data.payload && data.payload.name);
         const pass = String((data.payload && data.payload.pass) || "");
-        if (code.length < 5) {
-          return send(ws, { type: "room-error", payload: "A kód min. 5 betű legyen (angol abc, csak betűk)." });
+        if (name.length < 3 || name.length > 15) {
+          return send(ws, { type: "register-error", payload: "A név 3–15 karakter legyen (betű, szám, _)." });
         }
-        if (!/^[0-9]{3,}$/.test(pass)) {
-          return send(ws, { type: "room-error", payload: "A jelszó min. 3 szám legyen, és csak számokat tartalmazzon." });
+        if (pass.length < 3) {
+          return send(ws, { type: "register-error", payload: "A jelszó min. 3 karakter legyen." });
         }
-        if (rooms.has(code)) {
-          return send(ws, { type: "room-error", payload: "Ez a kód már foglalt, válassz másikat." });
+        if (accounts.has(name)) {
+          return send(ws, { type: "register-error", payload: "Ez a név már foglalt." });
         }
-        rooms.set(code, { pc: ws, phone: null, pass });
-        ws.roomCode = code;
-        send(ws, { type: "room-created", payload: { code } });
+        accounts.set(name, pass);
+        const token = crypto.randomUUID();
+        tokens.set(token, name);
+        online.set(name, ws);
+        ws.user = { name, device: (data.payload && data.payload.device) || "pc" };
+        send(ws, { type: "register-ok", payload: { name, token } });
         break;
       }
 
-      // Telefon: belépés
-      case "join-room": {
-        const code = normCode(data.payload && data.payload.code);
+      case "login": {
+        const name = normName(data.payload && data.payload.name);
         const pass = String((data.payload && data.payload.pass) || "");
+        if (!accounts.has(name) || accounts.get(name) !== pass) {
+          return send(ws, { type: "login-error", payload: "Hibás név vagy jelszó." });
+        }
+        const token = crypto.randomUUID();
+        tokens.set(token, name);
+        online.set(name, ws);
+        ws.user = { name, device: (data.payload && data.payload.device) || "pc" };
+        send(ws, { type: "login-ok", payload: { name, token } });
+        break;
+      }
+
+      case "auth-token": {
+        const token = String((data.payload && data.payload.token) || "");
+        const name = tokens.get(token);
+        if (!name) {
+          return send(ws, { type: "auth-error" });
+        }
+        online.set(name, ws);
+        ws.user = { name, device: (data.payload && data.payload.device) || "pc" };
+        send(ws, { type: "auth-ok", payload: { name } });
+        break;
+      }
+
+      // ---------- SZOBA ----------
+      case "create-room": {
+        if (!ws.user) return send(ws, { type: "room-error", payload: "Előbb jelentkezz be." });
+        if (ws.roomCode) return send(ws, { type: "room-error", payload: "Már egy szobában vagy." });
+        const code = String((data.payload && data.payload.code) || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
+        const pass = String((data.payload && data.payload.pass) || "");
+        const type = (data.payload && data.payload.type) === "lan" ? "lan" : "net";
         if (code.length < 5) {
           return send(ws, { type: "room-error", payload: "A kód min. 5 betű legyen (angol abc)." });
         }
         if (!/^[0-9]{3,}$/.test(pass)) {
           return send(ws, { type: "room-error", payload: "A jelszó min. 3 szám legyen, csak számok." });
         }
-        const room = rooms.get(code);
-        if (!room || !room.pc) {
-          return send(ws, { type: "room-error", payload: "Nincs ilyen szoba." });
+        if (rooms.has(code)) {
+          return send(ws, { type: "room-error", payload: "Ez a kód már foglalt, válassz másikat." });
         }
-        if (room.pass && room.pass !== pass) {
-          return send(ws, { type: "room-error", payload: "Hibás jelszó." });
-        }
-        if (room.phone) {
-          return send(ws, { type: "room-error", payload: "Ehhez a szobához már csatlakozott egy telefon." });
-        }
-        room.phone = ws;
+        const room = {
+          code, pass, type,
+          admin: ws,
+          adminIp: ws.ip,
+          members: new Map(),
+        };
+        room.members.set(ws.user.name, { ws, device: ws.user.device, category: "Játékosok" });
         ws.roomCode = code;
-        send(ws, { type: "room-ok", payload: { code } });
-        send(room.pc, { type: "phone-joined", payload: { code } });
+        rooms.set(code, room);
+        send(ws, { type: "room-created", payload: { code, type } });
         break;
       }
 
-      // WebRTC jelzés a szobán belül
-      case "signal": {
-        const code = ws.roomCode;
-        if (!code) return;
+      case "join-room": {
+        if (!ws.user) return send(ws, { type: "room-error", payload: "Előbb jelentkezz be." });
+        if (ws.roomCode) return send(ws, { type: "room-error", payload: "Már egy szobában vagy." });
+        const code = String((data.payload && data.payload.code) || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
+        const pass = String((data.payload && data.payload.pass) || "");
         const room = rooms.get(code);
+        if (!room) return send(ws, { type: "room-error", payload: "Nincs ilyen szoba." });
+        if (room.pass && room.pass !== pass) return send(ws, { type: "room-error", payload: "Hibás jelszó." });
+        addMember(room, ws, ws.user.device);
+        send(ws, { type: "room-ok", payload: { code, type: room.type } });
+        broadcastRoom(room, "room-state", roomState(room));
+        break;
+      }
+
+      // Meghívás (csak admin)
+      case "invite": {
+        if (!ws.user || !ws.roomCode) return;
+        const room = rooms.get(ws.roomCode);
+        if (!room || room.admin !== ws) return send(ws, { type: "invite-error", payload: "Csak a szoba adminja hívhat meg." });
+        const targetName = normName(data.payload && data.payload.name);
+        if (!targetName) return send(ws, { type: "invite-error", payload: "Adj meg nevet." });
+        const targetWs = online.get(targetName);
+        if (!targetWs || targetWs.readyState !== 1) {
+          return send(ws, { type: "invite-error", payload: "Nincs online ilyen játékos." });
+        }
+        if (room.members.has(targetName)) {
+          return send(ws, { type: "invite-error", payload: "Ez a játékos már a szobában van." });
+        }
+        if (room.type === "lan" && targetWs.ip !== room.adminIp) {
+          return send(ws, { type: "invite-error", payload: "Ez a játékos nem a LAN-odon van." });
+        }
+        send(targetWs, { type: "invite", payload: { roomCode: room.code, from: ws.user.name, type: room.type } });
+        send(ws, { type: "invite-sent", payload: { name: targetName } });
+        break;
+      }
+
+      // Meghívás elfogadása
+      case "invite-accept": {
+        if (!ws.user) return;
+        const code = String((data.payload && data.payload.roomCode) || "").toUpperCase();
+        const room = rooms.get(code);
+        if (!room) return send(ws, { type: "room-error", payload: "A szoba már nem létezik." });
+        if (room.members.has(ws.user.name)) return;
+        addMember(room, ws, ws.user.device);
+        send(ws, { type: "room-ok", payload: { code, type: room.type } });
+        broadcastRoom(room, "room-state", roomState(room));
+        break;
+      }
+
+      // Kategória váltás (csak admin)
+      case "move-member": {
+        if (!ws.user || !ws.roomCode) return;
+        const room = rooms.get(ws.roomCode);
+        if (!room || room.admin !== ws) return;
+        const name = normName(data.payload && data.payload.name);
+        const category = (data.payload && data.payload.category) === "Nézők" ? "Nézők" : "Játékosok";
+        const m = room.members.get(name);
+        if (!m) return;
+        m.category = category;
+        broadcastRoom(room, "room-state", roomState(room));
+        break;
+      }
+
+      // Játék indítás (csak admin)
+      case "start-game": {
+        if (!ws.user || !ws.roomCode) return;
+        const room = rooms.get(ws.roomCode);
+        if (!room || room.admin !== ws) return;
+        const active = activePlayer(room);
+        if (!active) return send(ws, { type: "room-error", payload: "Nincs játékos a szobában (telefon Nézők kategóriában van?)." });
+        broadcastRoom(room, "game-started", { activePlayer: active });
+        break;
+      }
+
+      // ---------- WEBRTC JELZÉS ----------
+      case "signal": {
+        if (!ws.user || !ws.roomCode) return;
+        const room = rooms.get(ws.roomCode);
         if (!room) return;
-        const target = data.payload.to === "pc" ? room.pc : room.phone;
+        const active = activePlayer(room);
+        let target = null;
+        if (ws === room.admin) {
+          target = active ? (room.members.get(active) || {}).ws : null;
+        } else if (active && ws.user.name === active) {
+          target = room.admin;
+        }
         if (target && target !== ws) send(target, { type: "signal", payload: data.payload });
         break;
       }
 
-      // Parancs: PC -> telefon
+      // Parancs: PC -> aktív telefon
       case "command": {
-        const code = ws.roomCode;
-        if (!code) return;
-        const room = rooms.get(code);
-        if (room && room.phone) send(room.phone, { type: "command", payload: data.payload });
+        if (!ws.user || !ws.roomCode) return;
+        const room = rooms.get(ws.roomCode);
+        if (!room || room.admin !== ws) return;
+        const active = activePlayer(room);
+        if (active) {
+          const m = room.members.get(active);
+          send(m.ws, { type: "command", payload: data.payload });
+        }
         break;
       }
     }
   });
 
   ws.on("close", () => {
+    if (ws.user) {
+      if (online.get(ws.user.name) === ws) online.delete(ws.user.name);
+    }
     if (ws.roomCode) {
       const room = rooms.get(ws.roomCode);
       if (room) {
-        if (room.pc === ws) {
-          if (room.phone) send(room.phone, { type: "peer-left" });
+        if (room.admin === ws) {
+          // az admin elment -> szoba törlés
+          for (const [, m] of room.members) {
+            if (m.ws !== ws) send(m.ws, { type: "peer-left" });
+          }
           rooms.delete(ws.roomCode);
-        } else if (room.phone === ws) {
-          room.phone = null;
-          if (room.pc) send(room.pc, { type: "phone-left" });
+        } else {
+          room.members.delete(ws.user.name);
+          broadcastRoom(room, "room-state", roomState(room));
         }
       }
     }
@@ -160,7 +321,7 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, () => {
   console.log("==========================================");
-  console.log("  Remote First-Person - LAN szerver fut");
+  console.log("  Remote First-Person - szerver fut");
   console.log("==========================================");
   console.log("");
   console.log("  A GEPro megnyitasa:  http://localhost:" + PORT);
@@ -170,7 +331,6 @@ server.listen(PORT, () => {
     console.log("    http://" + ip + ":" + PORT + "/phone.html");
   }
   console.log("");
-  console.log("  A gep hozza letre a szobat (kod + jelszo),");
-  console.log("  a telefon ezekkel lep be.");
+  console.log("  Fiókok memóriában tárolódnak (újraindításnál törlődnek).");
   console.log("==========================================");
 });
