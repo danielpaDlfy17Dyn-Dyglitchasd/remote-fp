@@ -98,6 +98,41 @@
       padding: 12px 14px; border-radius: 8px; font-size: 14px; outline: none; letter-spacing: 2px; font-family: inherit;
     }
     .invite-row input:focus { border-color: var(--line-bright); }
+
+    /* ===== JÁTÉK (fullscreen kamera) ===== */
+    #remote { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+
+    #crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 24px; height: 24px; pointer-events: none; z-index: 6; }
+    #crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.85); box-shadow: 0 0 4px rgba(0,0,0,.8); }
+    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+    #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+    #status { position: fixed; top: 16px; left: 16px; z-index: 8; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid rgba(255,255,255,.15); border-radius: 30px; background: rgba(10,10,10,.5); backdrop-filter: blur(4px); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+    #status .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    #status .led.on { background: #fff; box-shadow: 0 0 10px var(--glow); }
+
+    #togglebar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 8; display: flex; gap: 8px; pointer-events: none; }
+    .toggle-chip { padding: 7px 16px; border-radius: 30px; font-size: 12px; font-weight: 700; letter-spacing: 2px; background: rgba(10,10,10,.5); border: 1px solid rgba(255,255,255,.2); color: var(--muted); backdrop-filter: blur(4px); transition: all .12s ease; }
+    .toggle-chip.on { background: #fff; color: #000; border-color: #fff; box-shadow: 0 0 16px var(--glow); }
+
+    #fsBtn { position: fixed; top: 16px; right: 16px; z-index: 8; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(10,10,10,.5); border: 1px solid rgba(255,255,255,.2); border-radius: 10px; backdrop-filter: blur(4px); transition: all .15s ease; }
+    #fsBtn:hover { background: rgba(10,10,10,.8); border-color: rgba(255,255,255,.5); }
+    #fsBtn svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    #hint { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 7; font-size: 12px; color: rgba(255,255,255,.5); background: rgba(10,10,10,.5); padding: 5px 14px; border-radius: 16px; pointer-events: none; white-space: nowrap; }
+
+    #lockOverlay { position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; background: rgba(0,0,0,.65); backdrop-filter: blur(2px); }
+    #lockOverlay .ov-title { font-size: 22px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
+    #lockOverlay .ov-sub { font-size: 13px; color: var(--dim); }
+    #lockOverlay.hidden { display: none; }
+
+    .m-kick {
+      display: flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+      color: #ff5c5c; font-size: 13px; font-weight: 700;
+      border: 1px solid transparent; transition: all .12s ease;
+    }
+    .m-kick:hover { border-color: #ff5c5c; background: rgba(255,92,92,.1); }
   </style>
 </head>
 <body>
@@ -209,8 +244,30 @@
     </div>
   </div>
 
-  <!-- ========== 5. JÁTÉK (később) ========== -->
-  <div id="game" style="display:none; width:100vw; height:100vh; position:relative; background:#000;"></div>
+  <!-- ========== 5. JÁTÉK (fullscreen kamera) ========== -->
+  <div id="game" style="display:none; width:100vw; height:100vh; position:relative; background:#000;">
+    <video id="remote" autoplay playsinline muted></video>
+
+    <div id="status"><span class="led" id="ledConn"></span><span id="connText">Kapcsolódás</span></div>
+    <div id="crosshair"></div>
+
+    <div id="togglebar">
+      <span class="toggle-chip" id="chipF">F</span>
+      <span class="toggle-chip" id="chipCtrl">CTRL</span>
+      <span class="toggle-chip" id="chipShift">Shift</span>
+    </div>
+
+    <button id="fsBtn" title="Fullscreen">
+      <svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>
+    </button>
+
+    <div id="hint">↑↓←→ / WASD: mozgás &nbsp;•&nbsp; Q/E: elfordulás &nbsp;•&nbsp; R: akció &nbsp;•&nbsp; F/CTRL/Shift: toggle</div>
+
+    <div id="lockOverlay">
+      <div class="ov-title">Kattints a vezérléshez</div>
+      <div class="ov-sub">Egér: nézés &nbsp;•&nbsp; ESC: kilépés</div>
+    </div>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -340,6 +397,24 @@
           showGame();
           break;
         }
+        case "signal": {
+          const s = data.payload;
+          if (s.to !== "pc") return;
+          if (s.sdp && s.sdp.type === "offer") handleOffer(s.sdp);
+          else if (s.ice) {
+            if (rtc.remoteDescription) rtc.addIceCandidate(s.ice).catch(() => {});
+            else pendingIce.push(s.ice);
+          }
+          break;
+        }
+        case "kicked": {
+          ws.roomCode = null;
+          gameEl.style.display = "none";
+          inGame = false;
+          $("greetName").textContent = "Kirúgtak a szobából";
+          showScreen("mainScreen");
+          break;
+        }
         case "peer-left": {
           // az admin elment -> vissza a főképernyőre
           ws.roomCode = null;
@@ -409,6 +484,17 @@
         <span class="m-dev">${DEVICE_ICON[m.device] || ICON_PC}</span>
         <span class="m-name">${m.name}</span>
         <span class="m-tag">${DEVICE_LABEL[m.device] || "PC"}${m.name === (me && me.name) ? " • te" : ""}</span>`;
+      if (m.name !== (me && me.name)) {
+        const kickBtn = document.createElement("span");
+        kickBtn.className = "m-kick";
+        kickBtn.textContent = "✕";
+        kickBtn.title = "Kick";
+        kickBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          send({ type: "kick", payload: { name: m.name } });
+        });
+        div.appendChild(kickBtn);
+      }
       div.addEventListener("click", () => {
         // Admin: kattintásra áthelyezzük a másik kategóriába
         const newCat = m.category === "Játékosok" ? "Nézők" : "Játékosok";
@@ -447,10 +533,117 @@
       if (!$("startBtn").disabled) send({ type: "start-game" });
     });
 
-    // Ideiglenes stub - a következő lépésben jön a valódi játékképernyő
+    // ===== Játékképernyő =====
+    let inGame = false;
+    const gameEl = $("game");
+    const remoteVideo = $("remote");
     function showGame() {
-      // (5. lépésben töltődik be a valódi irányító felület)
+      document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+      gameEl.style.display = "block";
+      inGame = true;
     }
+
+    // ===== WebRTC (a telefon hív, mi válaszolunk) =====
+    const rtc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    let dataChannel = null;
+    let pendingIce = [];
+
+    rtc.ontrack = (e) => {
+      remoteVideo.srcObject = e.streams[0];
+      $("connText").textContent = "Kapcsolódva";
+      $("ledConn").classList.add("on");
+    };
+    rtc.ondatachannel = (e) => {
+      dataChannel = e.channel;
+      dataChannel.onmessage = (m) => { try { const d = JSON.parse(m.data); } catch (err) {} };
+    };
+    rtc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "phone", ice: e.candidate } }); };
+
+    async function handleOffer(offer) {
+      await rtc.setRemoteDescription(offer);
+      for (const c of pendingIce) rtc.addIceCandidate(c).catch(() => {});
+      pendingIce = [];
+      const answer = await rtc.createAnswer();
+      await rtc.setLocalDescription(answer);
+      send({ type: "signal", payload: { to: "phone", sdp: rtc.localDescription } });
+    }
+    function sendCommand(obj) { if (dataChannel && dataChannel.readyState === "open") dataChannel.send(JSON.stringify(obj)); }
+
+    // ===== Input =====
+    const dirMap = {
+      forward: ["ArrowUp", "KeyW"], back: ["ArrowDown", "KeyS"],
+      left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"]
+    };
+    const TGL = { F: "KeyF", CTRL: "ControlLeft", SHIFT: "ShiftLeft" };
+    const held = { forward: false, back: false, left: false, right: false, rotL: false, rotR: false, act: false };
+    const toggles = { F: false, CTRL: false, SHIFT: false };
+    const mouse = { LMB: false, RMB: false };
+
+    function keyToDir(code) { for (const d in dirMap) if (dirMap[d].includes(code)) return d; return null; }
+    function keyToTgl(code) { for (const t in TGL) if (TGL[t] === code) return t; return null; }
+    function refreshToggles() {
+      $("chipF").classList.toggle("on", toggles.F);
+      $("chipCtrl").classList.toggle("on", toggles.CTRL);
+      $("chipShift").classList.toggle("on", toggles.SHIFT);
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (!inGame) return;
+      const d = keyToDir(e.code);
+      if (d) { held[d] = true; e.preventDefault(); return; }
+      if (e.code === "KeyQ") { held.rotL = true; e.preventDefault(); }
+      else if (e.code === "KeyE") { held.rotR = true; e.preventDefault(); }
+      else if (e.code === "KeyR") { held.act = true; e.preventDefault(); }
+      else { const t = keyToTgl(e.code); if (t && !e.repeat) { toggles[t] = !toggles[t]; refreshToggles(); e.preventDefault(); } }
+    });
+    window.addEventListener("keyup", (e) => {
+      if (!inGame) return;
+      const d = keyToDir(e.code); if (d) { held[d] = false; return; }
+      if (e.code === "KeyQ") held.rotL = false;
+      else if (e.code === "KeyE") held.rotR = false;
+      else if (e.code === "KeyR") held.act = false;
+    });
+    window.addEventListener("blur", () => { for (const k in held) held[k] = false; });
+
+    // ===== Egérzárás + nézés + LMB/RMB =====
+    let locked = false;
+    let frameDx = 0, frameDy = 0;
+    const lockOverlay = $("lockOverlay");
+
+    function requestLock() { remoteVideo.requestPointerLock().catch(() => {}); }
+    lockOverlay.addEventListener("click", requestLock);
+    remoteVideo.addEventListener("click", () => { if (!locked) requestLock(); });
+    document.addEventListener("pointerlockchange", () => {
+      locked = document.pointerLockElement === remoteVideo;
+      lockOverlay.classList.toggle("hidden", locked);
+      if (!locked) { frameDx = 0; frameDy = 0; mouse.LMB = false; mouse.RMB = false; }
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (locked) { frameDx += e.movementX; frameDy += e.movementY; }
+    });
+    document.addEventListener("mousedown", (e) => {
+      if (locked && inGame) { if (e.button === 0) mouse.LMB = true; if (e.button === 2) mouse.RMB = true; }
+    });
+    document.addEventListener("mouseup", (e) => {
+      if (e.button === 0) mouse.LMB = false;
+      if (e.button === 2) mouse.RMB = false;
+    });
+    document.addEventListener("contextmenu", (e) => { if (inGame) e.preventDefault(); });
+
+    // ===== Fullscreen =====
+    $("fsBtn").addEventListener("click", () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+      else document.exitFullscreen();
+    });
+
+    // ===== Küldés ~30x/mp =====
+    setInterval(() => {
+      if (inGame) {
+        const look = locked ? { dx: frameDx, dy: frameDy } : null;
+        frameDx = 0; frameDy = 0;
+        sendCommand({ type: "state", held: { ...held, ...toggles, ...mouse }, toggles, look });
+      }
+    }, 33);
 
     // ===== Indítás: ha van mentett token, automatikus belépés =====
     (function init() {
