@@ -255,6 +255,21 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
+      // Kick (csak admin)
+      case "kick": {
+        if (!ws.user || !ws.roomCode) return;
+        const room = rooms.get(ws.roomCode);
+        if (!room || room.admin !== ws) return send(ws, { type: "invite-error", payload: "Csak a szoba adminja rúghat ki." });
+        const name = normName(data.payload && data.payload.name);
+        const m = room.members.get(name);
+        if (!m) return send(ws, { type: "invite-error", payload: "Nincs ilyen tag a szobában." });
+        if (name === ws.user.name) return send(ws, { type: "invite-error", payload: "Magadat nem rúghatod ki." });
+        send(m.ws, { type: "kicked" });
+        room.members.delete(name);
+        broadcastRoom(room, "room-state", roomState(room));
+        break;
+      }
+
       // Játék indítás (csak admin)
       case "start-game": {
         if (!ws.user || !ws.roomCode) return;
