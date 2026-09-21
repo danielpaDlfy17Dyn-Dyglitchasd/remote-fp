@@ -462,11 +462,20 @@
     }
 
     // ===== WebRTC =====
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+      ]
+    });
     let remoteSet = false;
     let pendingCandidates = [];
     let cameraTrack = null;
     let torchOn = false;
+
+    pc.onconnectionstatechange = () => { connTxt.textContent = "WebRTC: " + pc.connectionState; };
 
     pc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "pc", ice: e.candidate } }); };
     pc.ondatachannel = (e) => {
@@ -483,7 +492,7 @@
           remoteSet = true;
           for (const c of pendingCandidates) pc.addIceCandidate(c).catch(() => {});
           pendingCandidates = [];
-        }).catch(() => {});
+        }).catch((e) => { connTxt.textContent = "SDP hiba: " + e.message; });
       } else if (s.ice) {
         if (remoteSet) pc.addIceCandidate(s.ice).catch(() => {});
         else pendingCandidates.push(s.ice);
