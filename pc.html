@@ -563,9 +563,18 @@
     }
 
     // ===== WebRTC (a telefon hív, mi válaszolunk) =====
-    const rtc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const rtc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+      ]
+    });
     let dataChannel = null;
     let pendingIce = [];
+
+    rtc.onconnectionstatechange = () => { $("connText").textContent = "WebRTC: " + rtc.connectionState; };
 
     rtc.ontrack = (e) => {
       remoteVideo.srcObject = e.streams[0];
@@ -579,12 +588,16 @@
     rtc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "phone", ice: e.candidate } }); };
 
     async function handleOffer(offer) {
-      await rtc.setRemoteDescription(offer);
-      for (const c of pendingIce) rtc.addIceCandidate(c).catch(() => {});
-      pendingIce = [];
-      const answer = await rtc.createAnswer();
-      await rtc.setLocalDescription(answer);
-      send({ type: "signal", payload: { to: "phone", sdp: rtc.localDescription } });
+      try {
+        await rtc.setRemoteDescription(offer);
+        for (const c of pendingIce) rtc.addIceCandidate(c).catch(() => {});
+        pendingIce = [];
+        const answer = await rtc.createAnswer();
+        await rtc.setLocalDescription(answer);
+        send({ type: "signal", payload: { to: "phone", sdp: rtc.localDescription } });
+      } catch (e) {
+        $("connText").textContent = "HIBA: " + e.message;
+      }
     }
     function sendCommand(obj) { if (dataChannel && dataChannel.readyState === "open") dataChannel.send(JSON.stringify(obj)); }
 
