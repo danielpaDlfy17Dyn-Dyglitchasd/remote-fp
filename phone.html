@@ -131,13 +131,6 @@
     <div class="panel" id="joinPanel"></div>
   </div>
 
-  <!-- ========== ÉBRESZTŐ KÉPERNYŐ ========== -->
-  <div class="screen" id="loadingScreen">
-    <div class="spinner"></div>
-    <div class="load-title">Szerver ébresztése...</div>
-    <div class="load-sub">Az első csatlakozás akár 1 percig is eltarthat</div>
-  </div>
-
   <!-- ========== VÁRAKOZÓ KÉPERNYŐ ========== -->
   <div class="screen" id="waitScreen">
     <div class="wait-wrap">
@@ -271,7 +264,6 @@
 
     function connect(onReady) {
       if (ws && ws.readyState === 1) { onReady(); return; }
-      showScreen("loadingScreen");
       tryConnect(onReady);
     }
     function tryConnect(onReady) {
@@ -360,7 +352,6 @@
     $("inviteAccept").addEventListener("click", () => {
       $("invitePopup").classList.remove("show");
       send({ type: "invite-accept", payload: { roomCode: inviteRoom } });
-      showScreen("loadingScreen");
     });
     $("inviteDecline").addEventListener("click", () => {
       $("invitePopup").classList.remove("show");
