@@ -133,6 +133,7 @@
 
   <!-- ========== VÁRAKOZÓ KÉPERNYŐ ========== -->
   <div class="screen" id="waitScreen">
+    <button class="btn ghost slim" id="waitBackBtn" style="position:absolute; top:16px; left:16px; width:auto; padding:10px 16px">←</button>
     <div class="wait-wrap">
       <div class="wait-title" id="waitText">Várakozás az indításra...</div>
       <div class="cat-title">Játékosok</div>
@@ -359,6 +360,7 @@
     });
 
     // ===== Várakozó taglista (read-only) =====
+    $("waitBackBtn").addEventListener("click", () => showScreen("mainScreen"));
     const ICON_PC = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>';
     const ICON_PHONE = '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>';
     const DEVICE_ICON = { pc: ICON_PC, phone: ICON_PHONE };
@@ -443,6 +445,21 @@
           handleSignal(s);
           break;
         }
+        case "game-stopped": {
+          cleanupGame();
+          viewEl.style.display = "none";
+          showScreen("waitScreen");
+          $("waitText").textContent = "A játék leállt — várakozás az indításra";
+          break;
+        }
+        case "room-deleted": {
+          ws.roomCode = null;
+          cleanupGame();
+          viewEl.style.display = "none";
+          $("greetName").textContent = "A szoba törölve lett";
+          showScreen("mainScreen");
+          break;
+        }
         case "kicked": {
           ws.roomCode = null;
           document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
@@ -459,45 +476,24 @@
       }
     }
 
-    // ===== WebRTC =====
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
-      ]
-    });
+    // ===== WebRTC (minden játékhoz új kapcsolat) =====
+    let pc = null;
+    let currentStream = null;
     let remoteSet = false;
     let pendingCandidates = [];
     let cameraTrack = null;
     let torchOn = false;
 
-    pc.onconnectionstatechange = () => { connTxt.textContent = "WebRTC: " + pc.connectionState; };
-
-    pc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "pc", ice: e.candidate } }); };
-    pc.ondatachannel = (e) => {
-      const ch = e.channel;
-      ch.onopen = () => { led.classList.add("on"); connTxt.textContent = "Kapcsolódva"; };
-      ch.onmessage = (m) => {
-        try { const cmd = JSON.parse(m.data); if (cmd.type === "state") handleState(cmd); } catch (err) {}
-      };
-    };
-
-    function handleSignal(s) {
-      if (s.sdp && s.sdp.type === "answer") {
-        pc.setRemoteDescription(s.sdp).then(() => {
-          remoteSet = true;
-          for (const c of pendingCandidates) pc.addIceCandidate(c).catch(() => {});
-          pendingCandidates = [];
-        }).catch((e) => { connTxt.textContent = "SDP hiba: " + e.message; });
-      } else if (s.ice) {
-        if (remoteSet) pc.addIceCandidate(s.ice).catch(() => {});
-        else pendingCandidates.push(s.ice);
-      }
+    function cleanupGame() {
+      if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+      if (currentStream) { try { currentStream.getTracks().forEach((t) => t.stop()); } catch (e) {} currentStream = null; }
+      remoteSet = false;
+      pendingCandidates = [];
+      torchOn = false;
     }
 
     async function startStream() {
+      cleanupGame();
       document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
       viewEl.style.display = "block";
       connTxt.textContent = "Kamera indítása...";
@@ -508,8 +504,28 @@
         });
         video.srcObject = stream;
       } catch (err) { connTxt.textContent = "Kamera hiba: " + err.name + " (https kell)"; return; }
+      currentStream = stream;
       cameraTrack = stream.getVideoTracks()[0];
       torchOn = false;
+
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+        ]
+      });
+      pc.onconnectionstatechange = () => { connTxt.textContent = "WebRTC: " + pc.connectionState; };
+      pc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "pc", ice: e.candidate } }); };
+      pc.ondatachannel = (e) => {
+        const ch = e.channel;
+        ch.onopen = () => { led.classList.add("on"); connTxt.textContent = "Kapcsolódva"; };
+        ch.onclose = () => { connTxt.textContent = "A gép kapcsolata megszakadt"; led.classList.remove("on"); };
+        ch.onmessage = (m) => {
+          try { const cmd = JSON.parse(m.data); if (cmd.type === "state") handleState(cmd); } catch (err) {}
+        };
+      };
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
       const dc = pc.createDataChannel("control");
@@ -522,6 +538,20 @@
       await pc.setLocalDescription(offer);
       send({ type: "signal", payload: { to: "pc", sdp: pc.localDescription } });
       connTxt.textContent = "Kapcsolódás...";
+    }
+
+    function handleSignal(s) {
+      if (!pc) return;
+      if (s.sdp && s.sdp.type === "answer") {
+        pc.setRemoteDescription(s.sdp).then(() => {
+          remoteSet = true;
+          for (const c of pendingCandidates) pc.addIceCandidate(c).catch(() => {});
+          pendingCandidates = [];
+        }).catch((e) => { connTxt.textContent = "SDP hiba: " + e.message; });
+      } else if (s.ice) {
+        if (remoteSet) pc.addIceCandidate(s.ice).catch(() => {});
+        else pendingCandidates.push(s.ice);
+      }
     }
 
     // ===== Parancs kijelzés + vaku =====
