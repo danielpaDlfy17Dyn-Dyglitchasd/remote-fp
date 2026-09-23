@@ -445,6 +445,12 @@
           }
           break;
         }
+        case "signal": {
+          const s = data.payload;
+          if (s.to !== "phone") return;
+          handleSignal(s);
+          break;
+        }
         case "kicked": {
           ws.roomCode = null;
           document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
