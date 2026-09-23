@@ -309,19 +309,27 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
-      // Vissza a dashboardra (szoba megmarad)
+      // Vissza a dashboardra (szoba megmarad); a nem-tulaj tag ténylegesen kilép
       case "leave-room": {
         if (!ws.roomCode) return;
         const room = rooms.get(ws.roomCode);
         if (room) {
           if (room.inGame) {
             room.inGame = false;
-            broadcastRoom(room, "game-stopped", { reason: "admin-left" });
+            broadcastRoom(room, "game-stopped", { reason: "left" });
           }
-          detachFromRoom(room, ws);
+          if (room.owner === ws.user.name) {
+            // tulaj: csak leválik, a szoba megmarad a dashboardon
+            detachFromRoom(room, ws);
+          } else {
+            // tag: tényleges kilépés (tagság megszűnik)
+            room.members.delete(ws.user.name);
+            broadcastRoom(room, "room-state", roomState(room));
+            pushRoomListToOwner(room);
+          }
         }
         ws.roomCode = null;
-        pushRoomList(ws);
+        if (ws.user.device === "pc") pushRoomList(ws);
         break;
       }
 
