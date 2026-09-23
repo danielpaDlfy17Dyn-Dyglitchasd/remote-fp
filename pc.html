@@ -133,6 +133,32 @@
       border: 1px solid transparent; transition: all .12s ease;
     }
     .m-kick:hover { border-color: #ff5c5c; background: rgba(255,92,92,.1); }
+
+    /* ===== DASHBOARD szoba-csempék ===== */
+    .rooms-row { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; min-height: 90px; padding: 6px 0; }
+    .room-tile {
+      position: relative; width: 74px; height: 74px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: flex-start; gap: 12px;
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+      cursor: pointer; overflow: hidden; padding: 0 16px;
+      transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+    .room-tile:hover { width: 236px; border-color: var(--line-bright); box-shadow: 0 0 18px rgba(255,255,255,.06); }
+    .room-tile .rt-letter { font-size: 28px; font-weight: 800; letter-spacing: 1px; flex-shrink: 0; }
+    .room-tile .rt-info { opacity: 0; width: 140px; text-align: left; transition: opacity .18s ease .05s; white-space: nowrap; overflow: hidden; }
+    .room-tile:hover .rt-info { opacity: 1; }
+    .room-tile .rt-code { font-size: 15px; font-weight: 700; letter-spacing: 2px; }
+    .room-tile .rt-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .room-tile .rt-lock {
+      position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--dim);
+      opacity: 0; transition: opacity .15s ease;
+    }
+    .room-tile:hover .rt-lock { opacity: 1; }
+    .room-tile.locked .rt-letter { color: var(--dim); }
+    .room-tile.add { justify-content: center; border-style: dashed; }
+    .room-tile.add:hover { justify-content: flex-start; }
+    .room-tile .rt-plus { font-size: 30px; font-weight: 300; color: var(--dim); flex-shrink: 0; margin-left: 6px; }
+    .room-tile.add:hover .rt-plus { color: var(--text); }
   </style>
 </head>
 <body>
@@ -162,16 +188,21 @@
     </div>
   </div>
 
-  <!-- ========== 2. FŐKÉPERNYŐ ========== -->
+  <!-- ========== DASHBOARD ========== -->
   <div class="screen" id="mainScreen">
     <div class="brand">
       <div class="fp">REMOTE FP</div>
       <div class="sub" id="greetName">Szia!</div>
     </div>
     <div class="panel" style="text-align:center">
-      <h2>Válassz műveletet</h2>
-      <button class="btn big" id="mainCreateBtn">Create Room</button>
-      <div class="msg">Szobát csak a gépes (admin) oldalról lehet létrehozni.</div>
+      <h2>Szobáim</h2>
+      <div class="rooms-row" id="roomsRow">
+        <div class="room-tile add" id="addRoomTile" title="Szoba létrehozása">
+          <div class="rt-plus">+</div>
+          <div class="rt-info"><div class="rt-code">Szoba létrehozása</div></div>
+        </div>
+      </div>
+      <div class="msg" id="dashMsg">Válassz egy szobát, vagy hozz létre egyet a + gombbal.</div>
     </div>
   </div>
 
@@ -208,8 +239,11 @@
   <div class="screen" id="lobbyScreen">
     <div class="lobby-wrap">
       <div class="lobby-top">
+        <button class="btn ghost slim" id="backBtn">← Vissza</button>
         <span class="chip code" id="roomCodeChip">SZ#----</span>
         <span class="chip" id="roomTypeChip">NET</span>
+        <span class="chip" id="lockChip" style="cursor:pointer">🔓 Nyitva</span>
+        <button class="btn ghost slim" id="deleteRoomBtn">Törlés</button>
       </div>
 
       <div class="lobby-main">
@@ -427,6 +461,31 @@
           showScreen("mainScreen");
           break;
         }
+        case "my-rooms": {
+          myRooms = data.payload.rooms || [];
+          renderDash();
+          break;
+        }
+        case "room-ok": {
+          roomCode = data.payload.code;
+          roomType = data.payload.type || "net";
+          $("roomCodeChip").textContent = "SZ#" + roomCode;
+          $("roomTypeChip").textContent = roomType.toUpperCase();
+          $("inviteMsg").textContent = "";
+          $("inviteRow").style.display = "none";
+          showScreen("lobbyScreen");
+          break;
+        }
+        case "room-deleted": {
+          ws.roomCode = null;
+          roomCode = null;
+          showScreen("mainScreen");
+          $("dashMsg").textContent = "A szoba törölve lett.";
+          break;
+        }
+        case "game-stopped": {
+          break;
+        }
         case "peer-left": {
           // az admin elment -> vissza a főképernyőre
           ws.roomCode = null;
@@ -439,7 +498,37 @@
     // ===== Create Room: választó + kód + jelszó =====
     let roomCode = null, roomType = "net";
 
-    $("mainCreateBtn").addEventListener("click", () => {
+    // ===== Dashboard =====
+    let myRooms = [];
+    function renderDash() {
+      const row = $("roomsRow");
+      row.querySelectorAll(".room-tile:not(.add)").forEach((t) => t.remove());
+      for (const r of myRooms) {
+        const tile = document.createElement("div");
+        tile.className = "room-tile" + (r.locked ? " locked" : "");
+        tile.innerHTML = `
+          <div class="rt-letter">${r.code[0]}</div>
+          <div class="rt-info">
+            <div class="rt-code">${r.code}</div>
+            <div class="rt-meta">${r.type === "lan" ? "Helyi Hálozat" : "Világháló"} • ${r.members} tag${r.locked ? " • zárolva" : ""}</div>
+          </div>
+          ${r.locked ? '<div class="rt-lock">🔒</div>' : ""}`;
+        tile.addEventListener("click", () => {
+          send({ type: "enter-room", payload: { code: r.code } });
+        });
+        row.insertBefore(tile, $("addRoomTile"));
+      }
+      $("dashMsg").textContent = myRooms.length === 0
+        ? "Még nincs szobád — hozz létre egyet a + gombbal."
+        : "Kattints egy szobára a belépéshez.";
+    }
+
+    $("addRoomTile").addEventListener("click", () => {
+      if (myRooms.length >= 3) {
+        $("dashMsg").className = "msg err";
+        $("dashMsg").textContent = "Max 3 szoba lehet egyszerre. Törölj egyet a Törlés gombbal a szobán belül.";
+        return;
+      }
       $("netFields").style.display = "none";
       $("optNet").classList.remove("sel");
       $("optLan").classList.remove("sel");
@@ -520,11 +609,22 @@
       pl.innerHTML = ""; sp.innerHTML = "";
       let hasPlayer = false;
       for (const m of st.members || []) {
-        if (m.category === "Játékosok") { pl.appendChild(memberRow(m)); if (m.device === "phone") hasPlayer = true; }
-        else sp.appendChild(memberRow(m));
+        if (m.category === "Játékosok") {
+          const row = memberRow(m);
+          if (!m.online) row.style.opacity = .5;
+          pl.appendChild(row);
+          if (m.device === "phone" && m.online) hasPlayer = true;
+        } else {
+          const row = memberRow(m);
+          if (!m.online) row.style.opacity = .5;
+          sp.appendChild(row);
+        }
       }
       $("waitText").textContent = hasPlayer ? "Készen áll az indításra" : "Várakozás játékosra...";
       $("startBtn").disabled = !hasPlayer;
+      const locked = !!st.locked;
+      $("lockChip").dataset.locked = locked ? "1" : "0";
+      $("lockChip").textContent = locked ? "🔒 Zárva" : "🔓 Nyitva";
     }
 
     $("inviteBtn").addEventListener("click", () => {
@@ -543,6 +643,24 @@
 
     $("startBtn").addEventListener("click", () => {
       if (!$("startBtn").disabled) send({ type: "start-game" });
+    });
+
+    // ===== Lobby: Vissza / Törlés / Zárolás =====
+    $("backBtn").addEventListener("click", () => {
+      send({ type: "leave-room" });
+      roomCode = null;
+      showScreen("mainScreen");
+    });
+    $("deleteRoomBtn").addEventListener("click", () => {
+      if (!roomCode) return;
+      send({ type: "delete-room", payload: { code: roomCode } });
+      roomCode = null;
+      showScreen("mainScreen");
+    });
+    $("lockChip").addEventListener("click", () => {
+      if (!roomCode) return;
+      const locked = $("lockChip").dataset.locked === "1";
+      send({ type: "lock-room", payload: { code: roomCode, locked: !locked } });
     });
 
     // ===== Játékképernyő =====
