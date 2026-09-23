@@ -44,8 +44,26 @@ function send(ws, obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
+// ================= ADATBÁZIS (Upstash Redis - opcionális) =================
+// Ha a Render Environment-ben be van állítva (UPSTASH_URL, UPSTASH_TOKEN),
+// a fiókok szerver-újraindítás után is megmaradnak.
+const REDIS_URL = process.env.UPSTASH_URL || "";
+const REDIS_TOKEN = process.env.UPSTASH_TOKEN || "";
+const useRedis = !!(REDIS_URL && REDIS_TOKEN);
+
+async function rdb(command) {
+  if (!useRedis) return null;
+  const res = await fetch(REDIS_URL, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + REDIS_TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify(command),
+  });
+  const data = await res.json();
+  return data.result;
+}
+
 // ================= FIÓKOK =================
-// Memóriában tárolva - szerver újraindításnál törlődnek.
+// Memóriában + (ha be van állítva) Upstash Redis-ben tartósan.
 const accounts = new Map(); // name -> pass
 const tokens = new Map();   // token -> name
 const online = new Map();   // name -> ws
@@ -106,7 +124,7 @@ wss.on("connection", (ws, req) => {
   ws.user = null;
   ws.roomCode = null;
 
-  ws.on("message", (raw) => {
+  ws.on("message", async (raw) => {
     let data;
     try {
       data = JSON.parse(raw.toString());
@@ -128,9 +146,19 @@ wss.on("connection", (ws, req) => {
         if (accounts.has(name)) {
           return send(ws, { type: "register-error", payload: "Ez a név már foglalt." });
         }
+        if (useRedis) {
+          try {
+            const existing = await rdb(["GET", "account:" + name]);
+            if (existing !== null && existing !== undefined) {
+              return send(ws, { type: "register-error", payload: "Ez a név már foglalt." });
+            }
+            await rdb(["SET", "account:" + name, pass]);
+          } catch (e) { /* Redis hiba esetén memóriaban marad */ }
+        }
         accounts.set(name, pass);
         const token = crypto.randomUUID();
         tokens.set(token, name);
+        if (useRedis) { try { await rdb(["SET", "token:" + token, name]); } catch (e) {} }
         online.set(name, ws);
         ws.user = { name, device: (data.payload && data.payload.device) || "pc" };
         send(ws, { type: "register-ok", payload: { name, token } });
@@ -140,11 +168,19 @@ wss.on("connection", (ws, req) => {
       case "login": {
         const name = normName(data.payload && data.payload.name);
         const pass = String((data.payload && data.payload.pass) || "");
-        if (!accounts.has(name) || accounts.get(name) !== pass) {
+        let stored = accounts.get(name);
+        if (stored === undefined && useRedis) {
+          try {
+            stored = await rdb(["GET", "account:" + name]);
+            if (stored) accounts.set(name, stored);
+          } catch (e) {}
+        }
+        if (!stored || stored !== pass) {
           return send(ws, { type: "login-error", payload: "Hibás név vagy jelszó." });
         }
         const token = crypto.randomUUID();
         tokens.set(token, name);
+        if (useRedis) { try { await rdb(["SET", "token:" + token, name]); } catch (e) {} }
         online.set(name, ws);
         ws.user = { name, device: (data.payload && data.payload.device) || "pc" };
         send(ws, { type: "login-ok", payload: { name, token } });
@@ -153,7 +189,13 @@ wss.on("connection", (ws, req) => {
 
       case "auth-token": {
         const token = String((data.payload && data.payload.token) || "");
-        const name = tokens.get(token);
+        let name = tokens.get(token);
+        if (!name && useRedis) {
+          try {
+            name = await rdb(["GET", "token:" + token]);
+            if (name) tokens.set(token, name);
+          } catch (e) {}
+        }
         if (!name) {
           return send(ws, { type: "auth-error" });
         }
