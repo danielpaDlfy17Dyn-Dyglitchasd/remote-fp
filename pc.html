@@ -107,9 +107,17 @@
     #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
     #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
 
-    #status { position: fixed; top: 16px; left: 16px; z-index: 8; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid rgba(255,255,255,.15); border-radius: 30px; background: rgba(10,10,10,.5); backdrop-filter: blur(4px); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+    #status { position: fixed; top: 16px; left: 130px; z-index: 8; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid rgba(255,255,255,.15); border-radius: 30px; background: rgba(10,10,10,.5); backdrop-filter: blur(4px); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
     #status .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
     #status .led.on { background: #fff; box-shadow: 0 0 10px var(--glow); }
+
+    #gameBackBtn {
+      position: fixed; top: 16px; left: 16px; z-index: 8; cursor: pointer;
+      padding: 12px 18px; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+      background: rgba(10,10,10,.5); color: var(--dim); border: 1px solid rgba(255,255,255,.2);
+      border-radius: 10px; backdrop-filter: blur(4px); transition: all .15s ease;
+    }
+    #gameBackBtn:hover { color: var(--text); border-color: rgba(255,255,255,.5); background: rgba(10,10,10,.8); }
 
     #togglebar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 8; display: flex; gap: 8px; pointer-events: none; }
     .toggle-chip { padding: 7px 16px; border-radius: 30px; font-size: 12px; font-weight: 700; letter-spacing: 2px; background: rgba(10,10,10,.5); border: 1px solid rgba(255,255,255,.2); color: var(--muted); backdrop-filter: blur(4px); transition: all .12s ease; }
@@ -214,6 +222,7 @@
     </div>
     <div class="panel">
       <h2>Hol játszotok?</h2>
+      <button class="btn ghost slim" id="netBackBtn" style="width:auto; margin:0 0 14px">← Vissza</button>
       <div class="btn ghost" id="optNet" style="margin:0 0 10px; text-align:left; padding-left:18px">Világháló (Internet)</div>
       <div class="btn ghost" id="optLan" style="margin:0; text-align:left; padding-left:18px">Helyi Hálozat (LAN)</div>
       <div id="netFields" style="display:none">
@@ -239,7 +248,7 @@
   <div class="screen" id="lobbyScreen">
     <div class="lobby-wrap">
       <div class="lobby-top">
-        <button class="btn ghost slim" id="backBtn">← Vissza</button>
+        <button class="btn ghost slim" id="backBtn">← Főmenü</button>
         <span class="chip code" id="roomCodeChip">SZ#----</span>
         <span class="chip" id="roomTypeChip">NET</span>
         <span class="chip" id="lockChip" style="cursor:pointer">🔓 Nyitva</span>
@@ -275,6 +284,7 @@
   <div id="game" style="display:none; width:100vw; height:100vh; position:relative; background:#000;">
     <video id="remote" autoplay playsinline muted></video>
 
+    <button id="gameBackBtn" title="Vissza a főmenübe">← Főmenü</button>
     <div id="status"><span class="led" id="ledConn"></span><span id="connText">Kapcsolódás</span></div>
     <div id="crosshair"></div>
 
@@ -448,6 +458,7 @@
           if (s.to !== "pc") return;
           if (s.sdp && s.sdp.type === "offer") handleOffer(s.sdp);
           else if (s.ice) {
+            if (!rtc) return;
             if (rtc.remoteDescription) rtc.addIceCandidate(s.ice).catch(() => {});
             else pendingIce.push(s.ice);
           }
@@ -484,6 +495,13 @@
           break;
         }
         case "game-stopped": {
+          if (rtc) { try { rtc.close(); } catch (e) {} }
+          remoteVideo.srcObject = null;
+          for (const k in held) held[k] = false;
+          gameEl.style.display = "none";
+          inGame = false;
+          if (roomCode) showScreen("lobbyScreen");
+          else showScreen("mainScreen");
           break;
         }
         case "peer-left": {
@@ -646,6 +664,7 @@
     });
 
     // ===== Lobby: Vissza / Törlés / Zárolás =====
+    $("netBackBtn").addEventListener("click", () => showScreen("mainScreen"));
     $("backBtn").addEventListener("click", () => {
       send({ type: "leave-room" });
       roomCode = null;
@@ -669,36 +688,60 @@
     const remoteVideo = $("remote");
     function showGame() {
       document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+      newRtc();
+      $("lockOverlay").classList.remove("hidden");
+      $("connText").textContent = "Kapcsolódás";
+      $("ledConn").classList.remove("on");
       gameEl.style.display = "block";
       inGame = true;
     }
 
-    // ===== WebRTC (a telefon hív, mi válaszolunk) =====
-    const rtc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
-      ]
+    // Játék -> Főmenü gomb
+    $("gameBackBtn").addEventListener("click", () => {
+      if (document.pointerLockElement) document.exitPointerLock();
+      send({ type: "leave-room" });
+      if (rtc) { try { rtc.close(); } catch (e) {} }
+      remoteVideo.srcObject = null;
+      for (const k in held) held[k] = false;
+      mouse.LMB = false; mouse.RMB = false;
+      roomCode = null;
+      gameEl.style.display = "none";
+      inGame = false;
+      showScreen("mainScreen");
     });
+
+    // ===== WebRTC (a telefon hív, mi válaszolunk; minden játékhoz új kapcsolat) =====
+    let rtc = null;
     let dataChannel = null;
     let pendingIce = [];
 
-    rtc.onconnectionstatechange = () => { $("connText").textContent = "WebRTC: " + rtc.connectionState; };
-
-    rtc.ontrack = (e) => {
-      remoteVideo.srcObject = e.streams[0];
-      $("connText").textContent = "Kapcsolódva";
-      $("ledConn").classList.add("on");
-    };
-    rtc.ondatachannel = (e) => {
-      dataChannel = e.channel;
-      dataChannel.onmessage = (m) => { try { const d = JSON.parse(m.data); } catch (err) {} };
-    };
-    rtc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "phone", ice: e.candidate } }); };
+    function newRtc() {
+      if (rtc) { try { rtc.close(); } catch (e) {} }
+      dataChannel = null;
+      pendingIce = [];
+      rtc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+        ]
+      });
+      rtc.onconnectionstatechange = () => { $("connText").textContent = "WebRTC: " + rtc.connectionState; };
+      rtc.ontrack = (e) => {
+        remoteVideo.srcObject = e.streams[0];
+        $("connText").textContent = "Kapcsolódva";
+        $("ledConn").classList.add("on");
+      };
+      rtc.ondatachannel = (e) => {
+        dataChannel = e.channel;
+        dataChannel.onmessage = (m) => { try { const d = JSON.parse(m.data); } catch (err) {} };
+      };
+      rtc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "phone", ice: e.candidate } }); };
+    }
 
     async function handleOffer(offer) {
+      if (!rtc) newRtc();
       try {
         await rtc.setRemoteDescription(offer);
         for (const c of pendingIce) rtc.addIceCandidate(c).catch(() => {});
