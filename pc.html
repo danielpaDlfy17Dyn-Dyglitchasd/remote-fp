@@ -155,7 +155,7 @@
         <input id="authPass" type="password" maxlength="20" placeholder="••••••" />
         <div class="hint">Min. 3 karakter.</div>
       </div>
-      <label class="check-row"><input type="checkbox" id="rememberMe" checked /> Jegyezz meg</label>
+      <label class="check-row"><input type="checkbox" id="rememberMe" /> Bejelentkezve maradok ezen az eszközön</label>
       <button class="btn big" id="registerBtn">Regisztráció</button>
       <button class="btn ghost" id="loginBtn">Bejelentkezés</button>
       <div class="msg" id="authMsg"></div>
@@ -345,6 +345,7 @@
         case "login-ok": {
           me = { name: data.payload.name };
           if (pendingAuth && pendingAuth.remember) localStorage.setItem("rfp_token", data.payload.token);
+          else localStorage.removeItem("rfp_token");
           $("greetName").textContent = "Szia, " + data.payload.name + "!";
           showScreen("mainScreen");
           break;
