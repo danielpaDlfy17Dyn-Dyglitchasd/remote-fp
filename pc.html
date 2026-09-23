@@ -204,13 +204,6 @@
     </div>
   </div>
 
-  <!-- ========== ÉBRESZTŐ KÉPERNYŐ ========== -->
-  <div class="screen" id="loadingScreen">
-    <div class="spinner"></div>
-    <div class="load-title" id="loadTitle">Szerver ébresztése...</div>
-    <div class="load-sub">Az első csatlakozás akár 1 percig is eltarthat</div>
-  </div>
-
   <!-- ========== 4. VÁRÓSZOBA ========== -->
   <div class="screen" id="lobbyScreen">
     <div class="lobby-wrap">
@@ -306,7 +299,6 @@
 
     function connect(onReady) {
       if (ws && ws.readyState === 1) { onReady(); return; }
-      showScreen("loadingScreen");
       tryConnect(onReady);
     }
     function tryConnect(onReady) {
