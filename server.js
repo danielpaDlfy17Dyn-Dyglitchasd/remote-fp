@@ -44,8 +44,8 @@ function send(ws, obj) {
 }
 
 // ================= ADATBÁZIS (Upstash Redis - opcionális) =================
-const REDIS_URL = process.env.UPSTASH_URL || "";
-const REDIS_TOKEN = process.env.UPSTASH_TOKEN || "";
+const REDIS_URL = process.env.UPSTASH_URL || process.env.UPSTASH_REDIS_REST_URL || "";
+const REDIS_TOKEN = process.env.UPSTASH_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "";
 const useRedis = !!(REDIS_URL && REDIS_TOKEN);
 
 async function rdb(command) {
@@ -158,6 +158,56 @@ function lanAddresses() {
   return out;
 }
 
+// ================= SZOBA-MEGŐRZÉS (Upstash) =================
+function roomToJSON(room) {
+  const members = [];
+  for (const [name, m] of room.members) {
+    members.push({ name, device: m.device, category: m.category });
+  }
+  return JSON.stringify({
+    code: room.code, pass: room.pass, type: room.type,
+    locked: room.locked, owner: room.owner, adminIp: room.adminIp || "",
+    members,
+  });
+}
+
+function persistRoom(room) {
+  if (!useRedis) return;
+  rdb(["SET", "room:" + room.code, roomToJSON(room)]).catch(() => {});
+}
+
+function unpersistRoom(code) {
+  if (!useRedis) return;
+  rdb(["DEL", "room:" + code]).catch(() => {});
+}
+
+async function loadRooms() {
+  if (!useRedis) return;
+  try {
+    const keys = await rdb(["KEYS", "room:*"]);
+    if (!Array.isArray(keys)) return;
+    for (const key of keys) {
+      const raw = await rdb(["GET", key]);
+      if (!raw) continue;
+      try {
+        const r = JSON.parse(raw);
+        const room = {
+          code: r.code, pass: r.pass, type: r.type,
+          locked: !!r.locked, owner: r.owner,
+          adminWs: null, adminIp: r.adminIp || "",
+          members: new Map(),
+          inGame: false,
+        };
+        for (const m of (r.members || [])) {
+          room.members.set(m.name, { ws: null, device: m.device, category: m.category });
+        }
+        rooms.set(room.code, room);
+      } catch (e) {}
+    }
+    console.log("Redis: " + rooms.size + " szoba betoltve");
+  } catch (e) {}
+}
+
 wss.on("connection", (ws, req) => {
   ws.ip = clientIp(req);
   ws.user = null;
@@ -172,6 +222,24 @@ wss.on("connection", (ws, req) => {
     }
 
     switch (data.type) {
+      // ---------- DIAGNOSZTIKA ----------
+      case "redis-status": {
+        let status = { configured: useRedis, ok: false, error: "" };
+        if (useRedis) {
+          try {
+            const res = await rdb(["PING"]);
+            status.ok = res === "PONG";
+            if (!status.ok) status.error = "Valasz: " + JSON.stringify(res).slice(0, 100);
+          } catch (e) {
+            status.error = e.message;
+          }
+        } else {
+          status.error = "Nincs beallitva UPSTASH_URL / UPSTASH_TOKEN";
+        }
+        send(ws, { type: "redis-status", payload: status });
+        break;
+      }
+
       // ---------- FIÓK ----------
       case "register": {
         const name = normName(data.payload && data.payload.name);
@@ -281,6 +349,7 @@ wss.on("connection", (ws, req) => {
         };
         room.members.set(ws.user.name, { ws, device: ws.user.device, category: "Játékosok" });
         rooms.set(code, room);
+        persistRoom(room);
         ws.roomCode = code;
         send(ws, { type: "room-created", payload: { code, type } });
         pushRoomList(ws);
@@ -324,6 +393,7 @@ wss.on("connection", (ws, req) => {
           } else {
             // tag: tényleges kilépés (tagság megszűnik)
             room.members.delete(ws.user.name);
+            persistRoom(room);
             broadcastRoom(room, "room-state", roomState(room));
             pushRoomListToOwner(room);
           }
@@ -340,6 +410,7 @@ wss.on("connection", (ws, req) => {
         const room = rooms.get(code);
         if (!room || room.owner !== ws.user.name) return;
         room.locked = !!(data.payload && data.payload.locked);
+        persistRoom(room);
         broadcastRoom(room, "room-state", roomState(room));
         pushRoomListToOwner(room);
         break;
@@ -356,6 +427,7 @@ wss.on("connection", (ws, req) => {
         }
         if (ws.roomCode === code) ws.roomCode = null;
         rooms.delete(code);
+        unpersistRoom(code);
         pushRoomList(ws);
         break;
       }
@@ -380,6 +452,7 @@ wss.on("connection", (ws, req) => {
         let category = "Nézők";
         if (ws.user.device === "phone" && !activePlayer(room)) category = "Játékosok";
         room.members.set(ws.user.name, { ws, device: ws.user.device, category });
+        persistRoom(room);
         ws.roomCode = code;
         send(ws, { type: "room-ok", payload: { code, type: room.type } });
         broadcastRoom(room, "room-state", roomState(room));
@@ -421,6 +494,7 @@ wss.on("connection", (ws, req) => {
         let category = "Nézők";
         if (ws.user.device === "phone" && !activePlayer(room)) category = "Játékosok";
         room.members.set(ws.user.name, { ws, device: ws.user.device, category });
+        persistRoom(room);
         ws.roomCode = code;
         send(ws, { type: "room-ok", payload: { code, type: room.type } });
         broadcastRoom(room, "room-state", roomState(room));
@@ -438,6 +512,7 @@ wss.on("connection", (ws, req) => {
         const m = room.members.get(name);
         if (!m) return;
         m.category = category;
+        persistRoom(room);
         broadcastRoom(room, "room-state", roomState(room));
         break;
       }
@@ -453,6 +528,7 @@ wss.on("connection", (ws, req) => {
         if (name === ws.user.name) return send(ws, { type: "invite-error", payload: "Magadat nem rúghatod ki." });
         send(m.ws, { type: "kicked" });
         room.members.delete(name);
+        persistRoom(room);
         broadcastRoom(room, "room-state", roomState(room));
         pushRoomListToOwner(room);
         break;
@@ -530,6 +606,8 @@ wss.on("connection", (ws, req) => {
     ws.roomCode = null;
   });
 });
+
+loadRooms();
 
 server.listen(PORT, () => {
   console.log("==========================================");
