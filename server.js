@@ -611,7 +611,7 @@ loadRooms();
 
 server.listen(PORT, () => {
   console.log("==========================================");
-  console.log("  Remote First-Person - szerver fut");
+  console.log("  Interaktív App - szerver fut");
   console.log("==========================================");
   console.log("");
   console.log("  A GEPro megnyitasa:  http://localhost:" + PORT);
