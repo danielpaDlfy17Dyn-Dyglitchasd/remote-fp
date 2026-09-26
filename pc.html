@@ -154,6 +154,7 @@
     }
     .room-tile:hover { width: 236px; border-color: var(--line-bright); box-shadow: 0 0 18px rgba(255,255,255,.06); }
     .room-tile .rt-letter { font-size: 28px; font-weight: 800; letter-spacing: 1px; flex-shrink: 0; }
+    .room-tile .rt-img { width: 54px; height: 54px; border-radius: 9px; background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid var(--line); }
     .room-tile .rt-info { opacity: 0; width: 140px; text-align: left; transition: opacity .18s ease .05s; white-space: nowrap; overflow: hidden; }
     .room-tile:hover .rt-info { opacity: 1; }
     .room-tile .rt-code { font-size: 15px; font-weight: 700; letter-spacing: 2px; }
@@ -253,6 +254,14 @@
   <div id="editPopup">
     <div class="panel" style="max-width:360px">
       <h2 id="editTitle">Szoba szerkesztése</h2>
+      <div class="field">
+        <label id="editImgLabel">Szoba képe</label>
+        <div style="display:flex; align-items:center; gap:12px">
+          <div id="editImgPreview" style="width:56px;height:56px;border-radius:8px;background-color:var(--panel-2);border:1px solid var(--line);background-size:cover;background-position:center;flex-shrink:0"></div>
+          <button class="btn ghost slim" id="editImgBtn" style="width:auto; margin:0">Kép feltöltése</button>
+          <input type="file" id="editImgFile" accept="image/*" style="display:none" />
+        </div>
+      </div>
       <div class="field">
         <label id="editCodeLabel">Szobakód</label>
         <input id="editCodeInput" maxlength="12" placeholder="Pl: BARATOK" style="text-transform:uppercase" autocomplete="off" />
@@ -453,7 +462,8 @@
         netShort: "Világháló", lanShort: "Helyi Hálozat",
         nameMin3: "A név min. 3 karakter.", passMin3: "A jelszó min. 3 karakter.",
         giveName: "Adj meg nevet.",
-        editRoom: "Szoba szerkesztése", save: "Mentés", cancel: "Mégse", saving: "Mentés..."
+        editRoom: "Szoba szerkesztése", save: "Mentés", cancel: "Mégse", saving: "Mentés...",
+        roomImage: "Szoba képe", uploadImage: "Kép feltöltése", imgError: "A képet nem sikerült betölteni."
       },
       en: {
         welcome: "Welcome", createAccount: "Create account", login: "Log in",
@@ -484,7 +494,8 @@
         netShort: "Internet", lanShort: "Local network",
         nameMin3: "Name must be at least 3 characters.", passMin3: "Password must be at least 3 characters.",
         giveName: "Enter a name.",
-        editRoom: "Edit room", save: "Save", cancel: "Cancel", saving: "Saving..."
+        editRoom: "Edit room", save: "Save", cancel: "Cancel", saving: "Saving...",
+        roomImage: "Room image", uploadImage: "Upload image", imgError: "Could not load the image."
       }
     };
     let lang = localStorage.getItem("rfp_lang") || "hu";
@@ -561,6 +572,8 @@
       $("langHu").className = "btn" + (lang === "hu" ? "" : " ghost");
       $("langEn").className = "btn" + (lang === "en" ? "" : " ghost");
       $("editTitle").textContent = t("editRoom");
+      $("editImgLabel").textContent = t("roomImage");
+      $("editImgBtn").textContent = t("uploadImage");
       $("editCodeLabel").textContent = t("roomCode");
       $("editCodeHint").textContent = t("codeHint");
       $("editPassLabel").textContent = t("password");
@@ -763,7 +776,7 @@
         const tile = document.createElement("div");
         tile.className = "room-tile" + (r.locked ? " locked" : "");
         tile.innerHTML = `
-          <div class="rt-letter">${r.code[0]}</div>
+          ${r.image ? `<div class="rt-img" style="background-image:url(${r.image})"></div>` : `<div class="rt-letter">${r.code[0]}</div>`}
           <div class="rt-info">
             <div class="rt-code">${r.code}</div>
             <div class="rt-meta">${r.type === "lan" ? t("lanShort") : t("netShort")} • ${r.members}${t("members")}${r.locked ? t("lockedTag") : ""}</div>
@@ -789,9 +802,42 @@
       editingRoom = code;
       $("editCodeInput").value = r.code;
       $("editPassInput").value = r.pass || "";
+      $("editImgPreview").style.backgroundImage = r.image ? `url(${r.image})` : "none";
+      $("editImgFile").value = "";
       $("editMsg").textContent = "";
       $("editPopup").classList.add("show");
     }
+
+    // Kép feltöltés: átméretezés 128x128 JPEG-re, aztán küldés
+    function resizeImage(file, cb) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 128; canvas.height = 128;
+          const ctx = canvas.getContext("2d");
+          const s = Math.min(img.width, img.height);
+          const sx = (img.width - s) / 2, sy = (img.height - s) / 2;
+          ctx.drawImage(img, sx, sy, s, s, 0, 0, 128, 128);
+          cb(canvas.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = () => cb(null);
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    $("editImgBtn").addEventListener("click", () => $("editImgFile").click());
+    $("editImgFile").addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file || !editingRoom) return;
+      resizeImage(file, (dataUrl) => {
+        if (!dataUrl) { $("editMsg").className = "msg err"; $("editMsg").textContent = t("imgError"); return; }
+        $("editImgPreview").style.backgroundImage = `url(${dataUrl})`;
+        send({ type: "set-room-image", payload: { code: editingRoom, image: dataUrl } });
+      });
+    });
     $("editCodeInput").addEventListener("input", (e) => {
       e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 12);
     });
