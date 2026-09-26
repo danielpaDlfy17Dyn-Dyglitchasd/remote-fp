@@ -164,6 +164,23 @@
     }
     .room-tile:hover .rt-lock { opacity: 1; }
     .room-tile.locked .rt-letter { color: var(--dim); }
+    .rt-edit {
+      position: absolute; top: 6px; right: 8px; z-index: 2;
+      width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; color: var(--dim); border: 1px solid transparent;
+      opacity: 0; transition: all .12s ease;
+    }
+    .room-tile:hover .rt-edit { opacity: 1; }
+    .rt-edit:hover { color: var(--text); border-color: var(--line-bright); }
+    #editPopup {
+      position: fixed; inset: 0; z-index: 35; display: none;
+      align-items: center; justify-content: center; padding: 24px;
+      background: rgba(0,0,0,.75); backdrop-filter: blur(3px);
+    }
+    #editPopup.show { display: flex; }
+    .btn.danger { background: none; border: 1px solid #ff5c5c; color: #ff5c5c; }
+    .btn.danger:hover { background: rgba(255,92,92,.12); border-color: #ff8080; box-shadow: none; }
     .room-tile.add { justify-content: center; border-style: dashed; }
     .room-tile.add:hover { justify-content: flex-start; }
     .room-tile .rt-plus { font-size: 30px; font-weight: 300; color: var(--dim); flex-shrink: 0; margin-left: 6px; }
@@ -229,6 +246,27 @@
         </div>
       </div>
       <div class="msg" id="dashMsg">Válassz egy szobát, vagy hozz létre egyet a + gombbal.</div>
+    </div>
+  </div>
+
+  <!-- ========== SZOBA SZERKESZTÉS ========== -->
+  <div id="editPopup">
+    <div class="panel" style="max-width:360px">
+      <h2 id="editTitle">Szoba szerkesztése</h2>
+      <div class="field">
+        <label id="editCodeLabel">Szobakód</label>
+        <input id="editCodeInput" maxlength="12" placeholder="Pl: BARATOK" style="text-transform:uppercase" autocomplete="off" />
+        <div class="hint" id="editCodeHint">Csak angol abc betűi, min. 5 karakter.</div>
+      </div>
+      <div class="field">
+        <label id="editPassLabel">Jelszó</label>
+        <input id="editPassInput" inputmode="numeric" maxlength="12" placeholder="Pl: 1234" autocomplete="off" />
+        <div class="hint" id="editPassHint">Csak számok, min. 3 számjegy.</div>
+      </div>
+      <button class="btn" id="editSaveBtn">Mentés</button>
+      <button class="btn ghost" id="editCancelBtn">Mégse</button>
+      <button class="btn danger" id="editDeleteBtn">Törlés</button>
+      <div class="msg" id="editMsg"></div>
     </div>
   </div>
 
@@ -414,7 +452,8 @@
         settings: "Beállítások", language: "Nyelv", close: "Bezárás",
         netShort: "Világháló", lanShort: "Helyi Hálozat",
         nameMin3: "A név min. 3 karakter.", passMin3: "A jelszó min. 3 karakter.",
-        giveName: "Adj meg nevet."
+        giveName: "Adj meg nevet.",
+        editRoom: "Szoba szerkesztése", save: "Mentés", cancel: "Mégse", saving: "Mentés..."
       },
       en: {
         welcome: "Welcome", createAccount: "Create account", login: "Log in",
@@ -444,7 +483,8 @@
         settings: "Settings", language: "Language", close: "Close",
         netShort: "Internet", lanShort: "Local network",
         nameMin3: "Name must be at least 3 characters.", passMin3: "Password must be at least 3 characters.",
-        giveName: "Enter a name."
+        giveName: "Enter a name.",
+        editRoom: "Edit room", save: "Save", cancel: "Cancel", saving: "Saving..."
       }
     };
     let lang = localStorage.getItem("rfp_lang") || "hu";
@@ -520,6 +560,14 @@
       $("settingsClose").textContent = t("close");
       $("langHu").className = "btn" + (lang === "hu" ? "" : " ghost");
       $("langEn").className = "btn" + (lang === "en" ? "" : " ghost");
+      $("editTitle").textContent = t("editRoom");
+      $("editCodeLabel").textContent = t("roomCode");
+      $("editCodeHint").textContent = t("codeHint");
+      $("editPassLabel").textContent = t("password");
+      $("editPassHint").textContent = t("passDigitsHint");
+      $("editSaveBtn").textContent = t("save");
+      $("editCancelBtn").textContent = t("cancel");
+      $("editDeleteBtn").textContent = t("del");
       if (me) $("greetName").textContent = t("hi") + ", " + me.name + "!";
       renderDash();
       if (lastRoomState) renderRoomState(lastRoomState);
@@ -652,6 +700,16 @@
           showScreen("mainScreen");
           break;
         }
+        case "room-edited": {
+          $("editPopup").classList.remove("show");
+          editingRoom = null;
+          break;
+        }
+        case "edit-error": {
+          $("editMsg").className = "msg err";
+          $("editMsg").textContent = trMsg(data.payload);
+          break;
+        }
         case "my-rooms": {
           myRooms = data.payload.rooms || [];
           renderDash();
@@ -710,16 +768,55 @@
             <div class="rt-code">${r.code}</div>
             <div class="rt-meta">${r.type === "lan" ? t("lanShort") : t("netShort")} • ${r.members}${t("members")}${r.locked ? t("lockedTag") : ""}</div>
           </div>
-          ${r.locked ? '<div class="rt-lock">🔒</div>' : ""}`;
+          <div class="rt-edit" title="${t("editRoom")}">✎</div>`;
         tile.addEventListener("click", () => {
           send({ type: "enter-room", payload: { code: r.code } });
         });
+        const eb = tile.querySelector(".rt-edit");
+        if (eb) eb.addEventListener("click", (e) => { e.stopPropagation(); openEditRoom(r.code); });
         row.insertBefore(tile, $("addRoomTile"));
       }
       $("dashMsg").textContent = myRooms.length === 0
         ? t("dashHint0")
         : t("dashHint");
     }
+
+    // ===== Szoba szerkesztés (dashboard) =====
+    let editingRoom = null;
+    function openEditRoom(code) {
+      const r = myRooms.find((x) => x.code === code);
+      if (!r) return;
+      editingRoom = code;
+      $("editCodeInput").value = r.code;
+      $("editPassInput").value = r.pass || "";
+      $("editMsg").textContent = "";
+      $("editPopup").classList.add("show");
+    }
+    $("editCodeInput").addEventListener("input", (e) => {
+      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 12);
+    });
+    $("editPassInput").addEventListener("input", (e) => {
+      e.target.value = e.target.value.replace(/[^0-9]/g, "").slice(0, 12);
+    });
+    $("editSaveBtn").addEventListener("click", () => {
+      const code = $("editCodeInput").value;
+      const pass = $("editPassInput").value;
+      if (code.length < 5) { $("editMsg").className = "msg err"; $("editMsg").textContent = t("codeHint"); return; }
+      if (pass.length < 3) { $("editMsg").className = "msg err"; $("editMsg").textContent = t("passDigitsHint"); return; }
+      send({ type: "edit-room", payload: { code: editingRoom, newCode: code, newPass: pass } });
+      $("editMsg").className = "msg";
+      $("editMsg").textContent = t("saving");
+    });
+    $("editCancelBtn").addEventListener("click", () => {
+      $("editPopup").classList.remove("show");
+      editingRoom = null;
+    });
+    $("editDeleteBtn").addEventListener("click", () => {
+      send({ type: "delete-room", payload: { code: editingRoom } });
+      $("editPopup").classList.remove("show");
+      editingRoom = null;
+      showScreen("mainScreen");
+    });
 
     $("addRoomTile").addEventListener("click", () => {
       if (myRooms.length >= 3) {
