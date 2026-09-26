@@ -48,6 +48,8 @@
 
     /* ===== Várakozó képernyő ===== */
     .wait-wrap { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; }
+    #roomImgWrap { display: none; margin: 0 auto; }
+    #roomImg { width: 76px; height: 76px; border-radius: 14px; background-size: cover; background-position: center; border: 1px solid var(--line); }
     .wait-title { font-size: 16px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--dim); text-align: center; margin-bottom: 6px; }
     .cat-title { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 8px 0 2px; }
     .member { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
@@ -163,6 +165,7 @@
   <div class="screen" id="waitScreen">
     <button class="btn ghost slim" id="waitBackBtn" style="position:absolute; top:16px; left:16px; width:auto; padding:10px 16px">←</button>
     <div class="wait-wrap">
+      <div id="roomImgWrap"><div id="roomImg"></div></div>
       <div class="wait-title" id="waitText">Várakozás az indításra...</div>
       <div class="cat-title" id="wCatPlayers">Játékosok</div>
       <div id="wPlayers"></div>
@@ -553,6 +556,14 @@
     function renderWait(st) {
       const pl = $("wPlayers"), sp = $("wSpectators");
       pl.innerHTML = ""; sp.innerHTML = "";
+      // Szoba kép megjelenítése (ha van)
+      if (st.image) {
+        $("roomImg").style.backgroundImage = `url(${st.image})`;
+        $("roomImgWrap").style.display = "block";
+      } else {
+        $("roomImg").style.backgroundImage = "none";
+        $("roomImgWrap").style.display = "none";
+      }
       for (const m of st.members || []) {
         const div = document.createElement("div");
         div.className = "member";
