@@ -113,7 +113,7 @@ function pushRoomList(ws) {
   const list = [];
   for (const [, r] of rooms) {
     if (r.owner === ws.user.name) {
-      list.push({ code: r.code, type: r.type, locked: r.locked, members: r.members.size });
+      list.push({ code: r.code, type: r.type, locked: r.locked, members: r.members.size, pass: r.pass });
     }
   }
   send(ws, { type: "my-rooms", payload: { rooms: list } });
@@ -412,6 +412,42 @@ wss.on("connection", (ws, req) => {
         room.locked = !!(data.payload && data.payload.locked);
         persistRoom(room);
         broadcastRoom(room, "room-state", roomState(room));
+        pushRoomListToOwner(room);
+        break;
+      }
+
+      // Szoba szerkesztése: átnevezés + jelszó csere (csak tulaj)
+      case "edit-room": {
+        if (!ws.user) return;
+        const code = String((data.payload && data.payload.code) || "").toUpperCase();
+        const room = rooms.get(code);
+        if (!room || room.owner !== ws.user.name) {
+          return send(ws, { type: "edit-error", payload: "Ez nem a te szobád." });
+        }
+        const newCode = String((data.payload && data.payload.newCode) || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
+        const newPass = String((data.payload && data.payload.newPass) || "");
+        if (newCode.length < 5) {
+          return send(ws, { type: "edit-error", payload: "A kód min. 5 betű legyen (angol abc)." });
+        }
+        if (!/^[0-9]{3,}$/.test(newPass)) {
+          return send(ws, { type: "edit-error", payload: "A jelszó min. 3 szám legyen, csak számok." });
+        }
+        if (newCode !== code) {
+          if (rooms.has(newCode)) {
+            return send(ws, { type: "edit-error", payload: "Ez a kód már foglalt, válassz másikat." });
+          }
+          rooms.delete(code);
+          room.code = newCode;
+          rooms.set(newCode, room);
+          for (const [, m] of room.members) {
+            if (m.ws && m.ws.roomCode === code) m.ws.roomCode = newCode;
+          }
+          broadcastRoom(room, "room-renamed", { oldCode: code, newCode });
+          unpersistRoom(code);
+        }
+        room.pass = newPass;
+        persistRoom(room);
+        send(ws, { type: "room-edited", payload: { code: room.code } });
         pushRoomListToOwner(room);
         break;
       }
