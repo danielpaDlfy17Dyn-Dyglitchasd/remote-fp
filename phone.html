@@ -291,7 +291,7 @@
       mouseDot.style.transform = `translate(calc(-50% + ${dotX}px), calc(-50% + ${dotY}px))`;
     }
     setInterval(() => {
-      if (lastMove && performance.now() - lastMove > 500) {
+      if (lastMove && performance.now() - lastMove > 450) {
         dotX = 0; dotY = 0; lastMove = 0;
         mouseDot.classList.add("snap");
         mouseDot.style.transform = "translate(-50%, -50%)";
