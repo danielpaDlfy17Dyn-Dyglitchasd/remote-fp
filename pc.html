@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Remote First-Person</title>
+  <title>Interaktív App</title>
   <style>
     :root {
       --bg: #000000; --panel: #0a0a0a; --panel-2: #121212;
@@ -24,7 +24,7 @@
     .screen.active { display: flex; }
 
     .brand { text-align: center; margin-bottom: 30px; }
-    .brand .fp { font-size: 34px; font-weight: 800; letter-spacing: 6px; }
+    .brand .fp { font-size: 27px; font-weight: 800; letter-spacing: 4px; }
     .brand .sub { font-size: 13px; color: var(--dim); letter-spacing: 4px; text-transform: uppercase; margin-top: 6px; }
 
     .panel { width: 100%; max-width: 400px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; box-shadow: 0 0 40px rgba(255,255,255,.03); }
@@ -191,7 +191,7 @@
   <!-- ========== 1. REGISZTRÁCIÓ / BEJELENTKEZÉS ========== -->
   <div class="screen active" id="authScreen">
     <div class="brand">
-      <div class="fp">REMOTE FP</div>
+      <div class="fp">INTERAKTÍV APP</div>
       <div class="sub" id="authSub">Üdvözlünk</div>
     </div>
     <div class="panel">
@@ -217,7 +217,7 @@
   <div class="screen" id="mainScreen">
     <button id="settingsBtn" title="Beállítások">⚙</button>
     <div class="brand">
-      <div class="fp">REMOTE FP</div>
+      <div class="fp">INTERAKTÍV APP</div>
       <div class="sub" id="greetName">Szia!</div>
     </div>
     <div class="panel" style="text-align:center">
@@ -246,7 +246,7 @@
   <!-- ========== 3. WIFI/NET VÁLASZTÓ ========== -->
   <div class="screen" id="netScreen">
     <div class="brand">
-      <div class="fp">REMOTE FP</div>
+      <div class="fp">INTERAKTÍV APP</div>
       <div class="sub" id="netSub">Kapcsolat típusa</div>
     </div>
     <div class="panel">
