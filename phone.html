@@ -68,7 +68,7 @@
 
     /* ===== Kamera + vezérlőpanel ===== */
     #view { display: none; position: fixed; inset: 0; background: #000; }
-    .panel-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 14px; pointer-events: none; }
+    .panel-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 60px 14px 14px; pointer-events: none; }
     .topbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border: 1px solid rgba(255,255,255,.25); border-radius: 30px; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); }
     .topbar .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
     .topbar .led.on { background: #fff; box-shadow: 0 0 10px var(--glow); }
@@ -704,8 +704,8 @@
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1280 }, height: { ideal: 720 },
-            frameRate: { ideal: 30, max: 30 }
+            width: { ideal: 1920 }, height: { ideal: 1080 },
+            frameRate: { ideal: 20, max: 24 }
           },
           audio: false
         });
@@ -735,14 +735,14 @@
       };
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-      // Videó optimalizálás: bitrate-korlát + folytonosság elsőbbség (kevesebb lag)
+      // Videó optimalizálás: konstans 20 fps, éles felbontás, nem akad meg
       try {
         const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
         if (sender) {
           const params = sender.getParameters();
           if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-          params.encodings[0].maxBitrate = 1500000;
-          params.encodings[0].maxFramerate = 30;
+          params.encodings[0].maxBitrate = 2500000;
+          params.encodings[0].maxFramerate = 20;
           params.degradationPreference = "maintain-framerate";
           sender.setParameters(params).catch(() => {});
         }
