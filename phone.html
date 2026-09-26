@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Remote First-Person</title>
+  <title>Interaktív App</title>
   <style>
     :root { --bg:#000; --panel:#0a0a0a; --panel-2:#121212; --line:#2a2a2a; --line-bright:#4a4a4a; --text:#fff; --muted:#666; --dim:#999; --glow:rgba(255,255,255,.25); }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -19,7 +19,7 @@
     .screen.active { display: flex; }
 
     .brand { text-align: center; margin-bottom: 28px; }
-    .brand .fp { font-size: 26px; font-weight: 800; letter-spacing: 5px; }
+    .brand .fp { font-size: 21px; font-weight: 800; letter-spacing: 3px; }
     .brand .sub { font-size: 12px; color: var(--dim); letter-spacing: 3px; text-transform: uppercase; margin-top: 6px; }
 
     .panel { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 26px; }
@@ -118,7 +118,7 @@
 
   <!-- ========== REGISZTRÁCIÓ / BEJELENTKEZÉS ========== -->
   <div class="screen active" id="authScreen">
-    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub" id="authSub">Üdvözlünk</div></div>
+    <div class="brand"><div class="fp">INTERAKTÍV APP</div><div class="sub" id="authSub">Üdvözlünk</div></div>
     <div class="panel">
       <h2 id="authTitle">Fiók létrehozása</h2>
       <div class="field">
@@ -141,7 +141,7 @@
   <!-- ========== FŐKÉPERNYŐ ========== -->
   <div class="screen" id="mainScreen">
     <button id="settingsBtn">⚙</button>
-    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub" id="greetName">Szia!</div></div>
+    <div class="brand"><div class="fp">INTERAKTÍV APP</div><div class="sub" id="greetName">Szia!</div></div>
     <div class="panel" style="text-align:center">
       <h2 id="mainTitle">Válassz műveletet</h2>
       <button class="btn big" id="mainJoinBtn">Join Room</button>
@@ -155,7 +155,7 @@
 
   <!-- ========== JOIN (kód + jelszó) ========== -->
   <div class="screen" id="joinScreen">
-    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub" id="joinSub">Csatlakozás</div></div>
+    <div class="brand"><div class="fp">INTERAKTÍV APP</div><div class="sub" id="joinSub">Csatlakozás</div></div>
     <div class="panel" id="joinPanel"></div>
   </div>
 
