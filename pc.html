@@ -1053,6 +1053,11 @@
       rtc.onconnectionstatechange = () => { $("connText").textContent = "WebRTC: " + rtc.connectionState; };
       rtc.ontrack = (e) => {
         remoteVideo.srcObject = e.streams[0];
+        // Késleltetés minimalizálása a vevő oldalon (jitter buffer)
+        try {
+          if (e.receiver && "playoutDelayHint" in e.receiver) e.receiver.playoutDelayHint = 0;
+          if (e.receiver && "jitterBufferTarget" in e.receiver) e.receiver.jitterBufferTarget = 0;
+        } catch (err) {}
         $("connText").textContent = t("connected");
         $("ledConn").classList.add("on");
       };
