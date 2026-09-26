@@ -14,6 +14,7 @@
       min-height: 100vh; display: none; flex-direction: column;
       align-items: center; justify-content: center; padding: 24px;
       background: radial-gradient(120% 120% at 50% 20%, #0a0a0a 0%, #000 70%);
+      position: relative;
     }
     .screen.active { display: flex; }
 
@@ -79,6 +80,19 @@
       backdrop-filter: blur(4px); transition: all .15s ease;
     }
     #gameBackBtn:hover { color: #fff; border-color: rgba(255,255,255,.6); }
+
+    #settingsBtn {
+      position: absolute; top: 18px; right: 18px; z-index: 5; cursor: pointer;
+      width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+      font-size: 20px; border-radius: 10px;
+      background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
+    }
+    #settingsPopup {
+      position: fixed; inset: 0; z-index: 40; display: none;
+      align-items: center; justify-content: center; padding: 24px;
+      background: rgba(0,0,0,.75); backdrop-filter: blur(3px);
+    }
+    #settingsPopup.show { display: flex; }
     .main-row { display: flex; gap: 14px; align-items: stretch; width: 100%; }
     .col-keys { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
     .row { display: flex; gap: 6px; justify-content: center; }
@@ -104,20 +118,20 @@
 
   <!-- ========== REGISZTRÁCIÓ / BEJELENTKEZÉS ========== -->
   <div class="screen active" id="authScreen">
-    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub">Üdvözlünk</div></div>
+    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub" id="authSub">Üdvözlünk</div></div>
     <div class="panel">
       <h2 id="authTitle">Fiók létrehozása</h2>
       <div class="field">
-        <label>Játékos név</label>
+        <label id="authNameLabel">Játékos név</label>
         <input id="authName" maxlength="15" placeholder="Pl: DYNAMO" autocomplete="off" />
-        <div class="hint">3–15 karakter (betű, szám, _).</div>
+        <div class="hint" id="authNameHint">3–15 karakter (betű, szám, _).</div>
       </div>
       <div class="field">
-        <label>Jelszó</label>
+        <label id="authPassLabel">Jelszó</label>
         <input id="authPass" type="password" maxlength="20" placeholder="••••••" />
-        <div class="hint">Min. 3 karakter.</div>
+        <div class="hint" id="authPassHint">Min. 3 karakter.</div>
       </div>
-      <label class="check-row"><input type="checkbox" id="rememberMe" /> Bejelentkezve maradok ezen az eszközön</label>
+      <label class="check-row"><input type="checkbox" id="rememberMe" /><span id="rememberLabel">Bejelentkezve maradok ezen az eszközön</span></label>
       <button class="btn big" id="registerBtn">Regisztráció</button>
       <button class="btn ghost" id="loginBtn">Bejelentkezés</button>
       <div class="msg" id="authMsg"></div>
@@ -126,21 +140,22 @@
 
   <!-- ========== FŐKÉPERNYŐ ========== -->
   <div class="screen" id="mainScreen">
+    <button id="settingsBtn">⚙</button>
     <div class="brand"><div class="fp">REMOTE FP</div><div class="sub" id="greetName">Szia!</div></div>
     <div class="panel" style="text-align:center">
-      <h2>Válassz műveletet</h2>
+      <h2 id="mainTitle">Válassz műveletet</h2>
       <button class="btn big" id="mainJoinBtn">Join Room</button>
       <div id="inRoomRow" style="display:none">
         <button class="btn" id="backToRoomBtn" style="margin-top:10px">Vissza a szobába</button>
         <button class="btn ghost" id="leaveRoomBtn">Kilépés a szobából</button>
       </div>
-      <div class="msg">Kérj a gépről szobakódot és jelszót, vagy fogadj el egy meghívást.</div>
+      <div class="msg" id="mainMsg">Kérj a gépről szobakódot és jelszót, vagy fogadj el egy meghívást.</div>
     </div>
   </div>
 
   <!-- ========== JOIN (kód + jelszó) ========== -->
   <div class="screen" id="joinScreen">
-    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub">Csatlakozás</div></div>
+    <div class="brand"><div class="fp">REMOTE FP</div><div class="sub" id="joinSub">Csatlakozás</div></div>
     <div class="panel" id="joinPanel"></div>
   </div>
 
@@ -149,9 +164,9 @@
     <button class="btn ghost slim" id="waitBackBtn" style="position:absolute; top:16px; left:16px; width:auto; padding:10px 16px">←</button>
     <div class="wait-wrap">
       <div class="wait-title" id="waitText">Várakozás az indításra...</div>
-      <div class="cat-title">Játékosok</div>
+      <div class="cat-title" id="wCatPlayers">Játékosok</div>
       <div id="wPlayers"></div>
-      <div class="cat-title">Nézők</div>
+      <div class="cat-title" id="wCatSpectators">Nézők</div>
       <div id="wSpectators"></div>
     </div>
   </div>
@@ -159,10 +174,21 @@
   <!-- ========== MEGHÍVÁS FELUGRÓ ========== -->
   <div id="invitePopup">
     <div class="panel" style="text-align:center">
-      <h2>Meghívás</h2>
+      <h2 id="invTitle">Meghívás</h2>
       <div style="font-size:15px; line-height:1.6; margin-bottom:8px" id="inviteInfo"></div>
       <button class="btn" id="inviteAccept">Elfogadás</button>
       <button class="btn ghost" id="inviteDecline">Elutasítás</button>
+    </div>
+  </div>
+
+  <!-- ========== BEÁLLÍTÁSOK ========== -->
+  <div id="settingsPopup">
+    <div class="panel" style="max-width:320px; text-align:center">
+      <h2 id="setTitle">Beállítások</h2>
+      <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:12px" id="setLangLabel">Nyelv</div>
+      <button class="btn" id="langHu">Magyar</button>
+      <button class="btn ghost" id="langEn">English</button>
+      <button class="btn ghost" id="settingsClose" style="margin-top:14px">Bezárás</button>
     </div>
   </div>
 
@@ -277,6 +303,131 @@
     function proto() { return location.protocol === "https:" ? "wss" : "ws"; }
     function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
+    // ===== NYELV / LANGUAGE =====
+    const I18N = {
+      hu: {
+        welcome: "Üdvözlünk", createAccount: "Fiók létrehozása", login: "Bejelentkezés",
+        playerName: "Játékos név", nameHint: "3–15 karakter (betű, szám, _).",
+        password: "Jelszó", passHint: "Min. 3 karakter.", stayLoggedIn: "Bejelentkezve maradok ezen az eszközön",
+        register: "Regisztráció", hi: "Szia",
+        chooseAction: "Válassz műveletet", joinRoom: "Join Room",
+        backToRoom: "Vissza a szobába", leaveRoom: "Kilépés a szobából",
+        mainHint: "Kérj a gépről szobakódot és jelszót, vagy fogadj el egy meghívást.",
+        joinSub: "Csatlakozás",
+        codeTitle: "Szobakód (A-Z, min 5)", passTitle: "Jelszó (számok)",
+        codeMin: "Min. 5 betű, csak A-Z.", passMin: "Min. 3 szám, csak számok.",
+        next: "Tovább", back: "Vissza", joining: "Belépés...",
+        giveValue: "Adj meg értéket.", error: "Hiba", retry: "Újra",
+        invTitle: "Meghívás", accept: "Elfogadás", decline: "Elutasítás",
+        players: "Játékosok", spectators: "Nézők",
+        waitingStart: "Várakozás az indításra...",
+        spectator: "A játék elindult — te néző vagy",
+        gameStopped: "A játék leállt — várakozás az indításra",
+        roomDeleted: "A szoba törölve lett", kicked: "Kirúgtak a szobából",
+        connecting: "Kapcsolódás", connected: "Kapcsolódva",
+        cameraStart: "Kamera indítása...", camError: "Kamera hiba: ",
+        httpsNeed: " (https kell)",
+        dcLost: "A gép kapcsolata megszakadt",
+        nameMin3: "A név min. 3 karakter.", passMin3: "A jelszó min. 3 karakter.",
+        settings: "Beállítások", language: "Nyelv", close: "Bezárás"
+      },
+      en: {
+        welcome: "Welcome", createAccount: "Create account", login: "Log in",
+        playerName: "Player name", nameHint: "3–15 characters (letters, numbers, _).",
+        password: "Password", passHint: "Min. 3 characters.", stayLoggedIn: "Stay logged in on this device",
+        register: "Register", hi: "Hi",
+        chooseAction: "Choose an action", joinRoom: "Join Room",
+        backToRoom: "Back to the room", leaveRoom: "Leave the room",
+        mainHint: "Ask the PC for a room code and password, or accept an invitation.",
+        joinSub: "Join",
+        codeTitle: "Room code (A-Z, min 5)", passTitle: "Password (numbers)",
+        codeMin: "Min. 5 letters, A-Z only.", passMin: "Min. 3 digits, numbers only.",
+        next: "Next", back: "Back", joining: "Joining...",
+        giveValue: "Enter a value.", error: "Error", retry: "Retry",
+        invTitle: "Invitation", accept: "Accept", decline: "Decline",
+        players: "Players", spectators: "Spectators",
+        waitingStart: "Waiting for the game to start...",
+        spectator: "The game has started — you are a spectator",
+        gameStopped: "The game stopped — waiting to start",
+        roomDeleted: "The room was deleted", kicked: "You were kicked from the room",
+        connecting: "Connecting", connected: "Connected",
+        cameraStart: "Starting camera...", camError: "Camera error: ",
+        httpsNeed: " (https needed)",
+        dcLost: "The PC connection was lost",
+        nameMin3: "Name must be at least 3 characters.", passMin3: "Password must be at least 3 characters.",
+        settings: "Settings", language: "Language", close: "Close"
+      }
+    };
+    let lang = localStorage.getItem("rfp_lang") || "hu";
+    function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.hu[k] || k; }
+
+    const MSG_TR = {
+      "A név 3–15 karakter legyen (betű, szám, _).": "Name must be 3–15 characters (letters, numbers, _).",
+      "A jelszó min. 3 karakter legyen.": "Password must be at least 3 characters.",
+      "Ez a név már foglalt.": "This name is already taken.",
+      "Hibás név vagy jelszó.": "Wrong name or password.",
+      "A kód min. 5 betű legyen (angol abc).": "Room code must be at least 5 English letters.",
+      "A jelszó min. 3 szám legyen, csak számok.": "Room password: numbers only, at least 3 digits.",
+      "Ez a kód már foglalt, válassz másikat.": "This code is taken, choose another.",
+      "Max 3 szoba lehet egyszerre. Törölj egyet.": "You can have max 3 rooms at once. Delete one.",
+      "Ez nem a te szobád.": "This is not your room.",
+      "Nincs ilyen szoba.": "No such room.",
+      "A szoba zárva van.": "The room is locked.",
+      "Hibás jelszó.": "Wrong password.",
+      "Előbb jelentkezz be.": "Log in first.",
+      "Nincs online ilyen játékos.": "This player is not online.",
+      "Ez a játékos már a szobában van.": "This player is already in the room.",
+      "Ez a játékos nem a LAN-odon van.": "This player is not on your LAN.",
+      "Csak a szoba adminja hívhat meg.": "Only the room admin can invite.",
+      "Adj meg nevet.": "Enter a name.",
+      "Nincs ilyen tag a szobában.": "No such member in the room.",
+      "Magadat nem rúghatod ki.": "You cannot kick yourself.",
+      "Nincs elérhető játékos a szobában.": "No available player in the room.",
+      "Csak a szoba adminja rúghat ki.": "Only the room admin can kick.",
+      "A szoba már nem létezik.": "The room no longer exists.",
+      "Már egy szobában vagy.": "You are already in a room."
+    };
+    function trMsg(s) { return lang === "en" && MSG_TR[s] ? MSG_TR[s] : s; }
+
+    function applyLang() {
+      $("authSub").textContent = t("welcome");
+      $("authNameLabel").textContent = t("playerName");
+      $("authNameHint").textContent = t("nameHint");
+      $("authPassLabel").textContent = t("password");
+      $("authPassHint").textContent = t("passHint");
+      $("rememberLabel").textContent = t("stayLoggedIn");
+      setAuthMode(authMode);
+      $("registerBtn").textContent = t("register");
+      $("loginBtn").textContent = t("login");
+      $("mainTitle").textContent = t("chooseAction");
+      $("mainJoinBtn").textContent = t("joinRoom");
+      $("backToRoomBtn").textContent = t("backToRoom");
+      $("leaveRoomBtn").textContent = t("leaveRoom");
+      $("mainMsg").textContent = t("mainHint");
+      $("joinSub").textContent = t("joinSub");
+      $("wCatPlayers").textContent = t("players");
+      $("wCatSpectators").textContent = t("spectators");
+      $("invTitle").textContent = t("invTitle");
+      $("inviteAccept").textContent = t("accept");
+      $("inviteDecline").textContent = t("decline");
+      $("setTitle").textContent = t("settings");
+      $("setLangLabel").textContent = t("language");
+      $("settingsClose").textContent = t("close");
+      $("langHu").className = "btn" + (lang === "hu" ? "" : " ghost");
+      $("langEn").className = "btn" + (lang === "en" ? "" : " ghost");
+      if (me) $("greetName").textContent = t("hi") + ", " + me.name + "!";
+    }
+
+    $("settingsBtn").addEventListener("click", () => $("settingsPopup").classList.add("show"));
+    $("settingsClose").addEventListener("click", () => $("settingsPopup").classList.remove("show"));
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem("rfp_lang", l);
+      applyLang();
+    }
+    $("langHu").addEventListener("click", () => setLang("hu"));
+    $("langEn").addEventListener("click", () => setLang("en"));
+
     function connect(onReady) {
       if (ws && ws.readyState === 1) { onReady(); return; }
       tryConnect(onReady);
@@ -294,7 +445,7 @@
     let authMode = "register";
     function setAuthMode(mode) {
       authMode = mode;
-      $("authTitle").textContent = mode === "register" ? "Fiók létrehozása" : "Bejelentkezés";
+      $("authTitle").textContent = mode === "register" ? t("createAccount") : t("login");
       $("authMsg").textContent = "";
     }
     $("registerBtn").addEventListener("click", () => {
@@ -309,22 +460,25 @@
     function doAuth(mode) {
       const name = $("authName").value.trim();
       const pass = $("authPass").value;
-      if (name.length < 3) { $("authMsg").className = "msg err"; $("authMsg").textContent = "A név min. 3 karakter."; return; }
-      if (pass.length < 3) { $("authMsg").className = "msg err"; $("authMsg").textContent = "A jelszó min. 3 karakter."; return; }
+      if (name.length < 3) { $("authMsg").className = "msg err"; $("authMsg").textContent = t("nameMin3"); return; }
+      if (pass.length < 3) { $("authMsg").className = "msg err"; $("authMsg").textContent = t("passMin3"); return; }
       pendingAuth = { mode, remember: $("rememberMe").checked };
       connect(() => send({ type: mode, payload: { name, pass, device: "phone" } }));
     }
 
     // ===== Join UI (kód + jelszó) =====
     let entered = { code: "", pass: "" };
+    let isPassPhase = false;
 
     $("mainJoinBtn").addEventListener("click", () => {
       showScreen("joinScreen");
-      showForm("code", "Szobakód (A-Z, min 5)", (val) => {
-        if (!/^[A-Z]{5,}$/.test(val)) { $("formMsg").textContent = "Min. 5 betű, csak A-Z."; return; }
+      isPassPhase = false;
+      showForm(t("codeTitle"), t("codeTitle"), (val) => {
+        if (!/^[A-Z]{5,}$/.test(val)) { $("formMsg").textContent = t("codeMin"); return; }
         entered.code = val;
-        showForm("pass", "Jelszó (számok)", (v2) => {
-          if (!/^[0-9]{3,}$/.test(v2)) { $("formMsg").textContent = "Min. 3 szám, csak számok."; return; }
+        isPassPhase = true;
+        showForm(t("passTitle"), t("passTitle"), (v2) => {
+          if (!/^[0-9]{3,}$/.test(v2)) { $("formMsg").textContent = t("passMin"); return; }
           entered.pass = v2; doJoin();
         });
       });
@@ -335,25 +489,25 @@
       joinPanel.innerHTML = `
         <h2>${title}</h2>
         <div class="field"><input id="formInput" placeholder="${ph}" maxlength="12" autocomplete="off" /></div>
-        <button class="btn" id="formNext">Tovább</button>
-        <button class="btn ghost" id="formBack">Vissza</button>
+        <button class="btn" id="formNext">${t("next")}</button>
+        <button class="btn ghost" id="formBack">${t("back")}</button>
         <div class="msg" id="formMsg"></div>`;
       $("formInput").addEventListener("input", (e) => {
         e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
       });
       $("formNext").addEventListener("click", () => {
         const v = $("formInput").value.trim();
-        if (!v) { $("formMsg").textContent = "Adj meg értéket."; return; }
+        if (!v) { $("formMsg").textContent = t("giveValue"); return; }
         cb(v);
       });
-      $("formBack").addEventListener("click", () => { if (title.startsWith("Jelszó")) $("mainJoinBtn").click(); else showScreen("mainScreen"); });
+      $("formBack").addEventListener("click", () => { if (isPassPhase) $("mainJoinBtn").click(); else showScreen("mainScreen"); });
       $("formInput").focus();
     }
 
     function doJoin() {
       const joinPanel = $("joinPanel");
-      joinPanel.innerHTML = `<h2>Csatlakozás</h2><div class="msg" id="joinMsg"></div>`;
-      $("joinMsg").textContent = "Belépés...";
+      joinPanel.innerHTML = `<h2>${t("joinSub")}</h2><div class="msg" id="joinMsg"></div>`;
+      $("joinMsg").textContent = t("joining");
       connect(() => send({ type: "join-room", payload: { code: entered.code, pass: entered.pass } }));
     }
 
@@ -361,7 +515,7 @@
     let inviteRoom = null;
     function showInvite(p) {
       inviteRoom = p.roomCode;
-      $("inviteInfo").innerHTML = `<b>${p.from}</b> meghívott a <b>${p.roomCode}</b> szobába.`;
+      $("inviteInfo").innerHTML = `<b>${p.from}</b>${t("invitedYou")}<b>${p.roomCode}</b>${t("invitedRoom")}`;
       $("invitePopup").classList.add("show");
     }
     $("inviteAccept").addEventListener("click", () => {
@@ -418,7 +572,7 @@
           me = { name: data.payload.name };
           if (pendingAuth && pendingAuth.remember) localStorage.setItem("rfp_token", data.payload.token);
           else localStorage.removeItem("rfp_token");
-          $("greetName").textContent = "Szia, " + data.payload.name + "!";
+          $("greetName").textContent = t("hi") + ", " + data.payload.name + "!";
           showScreen("mainScreen");
           break;
         }
@@ -426,12 +580,12 @@
         case "login-error": {
           showScreen("authScreen");
           $("authMsg").className = "msg err";
-          $("authMsg").textContent = data.payload;
+          $("authMsg").textContent = trMsg(data.payload);
           break;
         }
         case "auth-ok": {
           me = { name: data.payload.name };
-          $("greetName").textContent = "Szia, " + data.payload.name + "!";
+          $("greetName").textContent = t("hi") + ", " + data.payload.name + "!";
           showScreen("mainScreen");
           break;
         }
@@ -444,7 +598,7 @@
           inRoom = true;
           updateMainBtns();
           showScreen("waitScreen");
-          $("waitText").textContent = "Várakozás az indításra...";
+          $("waitText").textContent = t("waitingStart");
           break;
         }
         case "room-state": {
@@ -454,8 +608,8 @@
         case "room-error": {
           showScreen("joinScreen");
           const joinPanel = $("joinPanel");
-          joinPanel.innerHTML = `<h2>Hiba</h2><div class="msg err" id="errMsg"></div><button class="btn" id="retryBtn" style="margin-top:14px">Újra</button>`;
-          $("errMsg").textContent = data.payload;
+          joinPanel.innerHTML = `<h2>${t("error")}</h2><div class="msg err" id="errMsg"></div><button class="btn" id="retryBtn" style="margin-top:14px">${t("retry")}</button>`;
+          $("errMsg").textContent = trMsg(data.payload);
           $("retryBtn").addEventListener("click", () => showScreen("mainScreen"));
           break;
         }
@@ -468,7 +622,7 @@
             startStream();
           } else {
             showScreen("waitScreen");
-            $("waitText").textContent = "A játék elindult — te néző vagy";
+            $("waitText").textContent = t("spectator");
           }
           break;
         }
@@ -482,7 +636,7 @@
           cleanupGame();
           viewEl.style.display = "none";
           showScreen("waitScreen");
-          $("waitText").textContent = "A játék leállt — várakozás az indításra";
+          $("waitText").textContent = t("gameStopped");
           break;
         }
         case "room-deleted": {
@@ -491,7 +645,7 @@
           updateMainBtns();
           cleanupGame();
           viewEl.style.display = "none";
-          $("greetName").textContent = "A szoba törölve lett";
+          $("greetName").textContent = t("roomDeleted");
           showScreen("mainScreen");
           break;
         }
@@ -501,7 +655,7 @@
           updateMainBtns();
           document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
           viewEl.style.display = "none";
-          $("greetName").textContent = "Kirúgtak a szobából";
+          $("greetName").textContent = t("kicked");
           showScreen("mainScreen");
           break;
         }
@@ -533,14 +687,14 @@
       cleanupGame();
       document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
       viewEl.style.display = "block";
-      connTxt.textContent = "Kamera indítása...";
+      connTxt.textContent = t("cameraStart");
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false
         });
         video.srcObject = stream;
-      } catch (err) { connTxt.textContent = "Kamera hiba: " + err.name + " (https kell)"; return; }
+      } catch (err) { connTxt.textContent = t("camError") + err.name + t("httpsNeed"); return; }
       currentStream = stream;
       cameraTrack = stream.getVideoTracks()[0];
       torchOn = false;
@@ -557,8 +711,8 @@
       pc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", payload: { to: "pc", ice: e.candidate } }); };
       pc.ondatachannel = (e) => {
         const ch = e.channel;
-        ch.onopen = () => { led.classList.add("on"); connTxt.textContent = "Kapcsolódva"; };
-        ch.onclose = () => { connTxt.textContent = "A gép kapcsolata megszakadt"; led.classList.remove("on"); };
+        ch.onopen = () => { led.classList.add("on"); connTxt.textContent = t("connected"); };
+        ch.onclose = () => { connTxt.textContent = t("dcLost"); led.classList.remove("on"); };
         ch.onmessage = (m) => {
           try { const cmd = JSON.parse(m.data); if (cmd.type === "state") handleState(cmd); } catch (err) {}
         };
@@ -566,7 +720,7 @@
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
       const dc = pc.createDataChannel("control");
-      dc.onopen = () => { led.classList.add("on"); connTxt.textContent = "Kapcsolódva"; };
+      dc.onopen = () => { led.classList.add("on"); connTxt.textContent = t("connected"); };
       dc.onmessage = (m) => {
         try { const cmd = JSON.parse(m.data); if (cmd.type === "state") handleState(cmd); } catch (err) {}
       };
@@ -574,7 +728,7 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       send({ type: "signal", payload: { to: "pc", sdp: pc.localDescription } });
-      connTxt.textContent = "Kapcsolódás...";
+      connTxt.textContent = t("connecting");
     }
 
     function handleSignal(s) {
@@ -621,10 +775,11 @@
 
     // ===== Indítás: mentett token -> automatikus belépés =====
     (function init() {
-      const t = localStorage.getItem("rfp_token");
-      if (t) {
+      applyLang();
+      const tok = localStorage.getItem("rfp_token");
+      if (tok) {
         pendingAuth = { mode: "token", remember: true };
-        connect(() => send({ type: "auth-token", payload: { token: t, device: "phone" } }));
+        connect(() => send({ type: "auth-token", payload: { token: tok, device: "phone" } }));
       }
     })();
   </script>
