@@ -97,6 +97,7 @@ function roomState(room) {
   }
   return {
     code: room.code, type: room.type, locked: room.locked, inGame: room.inGame,
+    image: room.image || null,
     members, activePlayer: activePlayer(room),
   };
 }
@@ -113,7 +114,7 @@ function pushRoomList(ws) {
   const list = [];
   for (const [, r] of rooms) {
     if (r.owner === ws.user.name) {
-      list.push({ code: r.code, type: r.type, locked: r.locked, members: r.members.size, pass: r.pass });
+      list.push({ code: r.code, type: r.type, locked: r.locked, members: r.members.size, pass: r.pass, image: r.image || null });
     }
   }
   send(ws, { type: "my-rooms", payload: { rooms: list } });
@@ -167,6 +168,7 @@ function roomToJSON(room) {
   return JSON.stringify({
     code: room.code, pass: room.pass, type: room.type,
     locked: room.locked, owner: room.owner, adminIp: room.adminIp || "",
+    image: room.image || null,
     members,
   });
 }
@@ -201,6 +203,7 @@ async function loadRooms() {
         for (const m of (r.members || [])) {
           room.members.set(m.name, { ws: null, device: m.device, category: m.category });
         }
+        room.image = r.image || null;
         rooms.set(room.code, room);
       } catch (e) {}
     }
@@ -410,6 +413,29 @@ wss.on("connection", (ws, req) => {
         const room = rooms.get(code);
         if (!room || room.owner !== ws.user.name) return;
         room.locked = !!(data.payload && data.payload.locked);
+        persistRoom(room);
+        broadcastRoom(room, "room-state", roomState(room));
+        pushRoomListToOwner(room);
+        break;
+      }
+
+      // Szoba kép feltöltése (csak tulaj)
+      case "set-room-image": {
+        if (!ws.user) return;
+        const code = String((data.payload && data.payload.code) || "").toUpperCase();
+        const room = rooms.get(code);
+        if (!room || room.owner !== ws.user.name) {
+          return send(ws, { type: "edit-error", payload: "Ez nem a te szobád." });
+        }
+        const image = data.payload && data.payload.image;
+        if (typeof image === "string" && image.length > 0) {
+          if (image.length > 800000) {
+            return send(ws, { type: "edit-error", payload: "A kép túl nagy." });
+          }
+          room.image = image;
+        } else {
+          room.image = null;
+        }
         persistRoom(room);
         broadcastRoom(room, "room-state", roomState(room));
         pushRoomListToOwner(room);
