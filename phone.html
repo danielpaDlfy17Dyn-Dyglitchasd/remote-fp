@@ -702,7 +702,12 @@
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 }, height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 30 }
+          },
+          audio: false
         });
         video.srcObject = stream;
       } catch (err) { connTxt.textContent = t("camError") + err.name + t("httpsNeed"); return; }
@@ -729,6 +734,19 @@
         };
       };
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+      // Videó optimalizálás: bitrate-korlát + folytonosság elsőbbség (kevesebb lag)
+      try {
+        const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+        if (sender) {
+          const params = sender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+          params.encodings[0].maxBitrate = 1500000;
+          params.encodings[0].maxFramerate = 30;
+          params.degradationPreference = "maintain-framerate";
+          sender.setParameters(params).catch(() => {});
+        }
+      } catch (e) {}
 
       const dc = pc.createDataChannel("control");
       dc.onopen = () => { led.classList.add("on"); connTxt.textContent = t("connected"); };
